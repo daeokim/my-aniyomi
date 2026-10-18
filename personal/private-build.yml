@@ -28,7 +28,7 @@ jobs:
       - name: Run independent policy tests
         run: bash tools/test-personal.sh
       - name: Compile app and run Android JVM tests
-        run: bash gradlew :app:assembleRelease :app:testReleaseUnitTest --no-daemon
+        run: bash gradlew :app:assembleRelease :app:testReleaseUnitTest -Pdisable-code-shrink --no-daemon
       - name: Prepare offline signing tools
         run: |
           mkdir -p personal/output/signing-tools

@@ -42,7 +42,7 @@ def main():
         config.chmod(0o600)
         keystore.chmod(0o600)
     subprocess.run([
-        'bash', str(ROOT / 'gradlew'), ':app:assembleRelease', ':app:testReleaseUnitTest', '--no-daemon',
+        'bash', str(ROOT / 'gradlew'), ':app:assembleRelease', ':app:testReleaseUnitTest', '-Pdisable-code-shrink', '--no-daemon',
     ], cwd=ROOT, check=True)
     apk = ROOT / 'app/build/outputs/apk/release/app-arm64-v8a-release.apk'
     if not apk.is_file():
