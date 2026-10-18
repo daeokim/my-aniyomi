@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.setting
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import android.os.Build
 import androidx.compose.ui.graphics.BlendMode
 import dev.icerock.moko.resources.StringResource
@@ -91,6 +93,11 @@ class ReaderPreferences(
     // endregion
 
     // region Split two page spread
+
+    // Personal fork: distinct-page pairing on the inner display, independent of image splitting.
+    fun foldSpreadEnabled() = preferenceStore.getBoolean("personal_fold_spread", true)
+
+    fun foldSpreadCoverAlone() = preferenceStore.getBoolean("personal_fold_cover_alone", true)
 
     fun dualPageSplitPaged() = preferenceStore.getBoolean("pref_dual_page_split", false)
 

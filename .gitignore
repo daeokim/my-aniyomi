@@ -14,3 +14,9 @@ local.properties
 
 # macOS specific files
 .DS_Store
+# Personal signing keys never enter git history.
+personal/signing/
+personal/test-output/
+personal/output/
+__pycache__/
+*.pyc

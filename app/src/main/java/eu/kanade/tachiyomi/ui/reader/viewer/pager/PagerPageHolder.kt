@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.LayoutInflater
@@ -41,6 +43,9 @@ class PagerPageHolder(
      */
     override val item
         get() = page
+
+    var imageLoaded = false
+        private set
 
     /**
      * Loading progress bar to indicate the current progress.
@@ -163,10 +168,10 @@ class PagerPageHolder(
                     isAnimated,
                     Config(
                         zoomDuration = viewer.config.doubleTapAnimDuration,
-                        minimumScaleType = viewer.config.imageScaleType,
+                        minimumScaleType = if (viewer.isSpreadMode) 1 else viewer.config.imageScaleType,
                         cropBorders = viewer.config.imageCropBorders,
                         zoomStartPosition = viewer.config.imageZoomType,
-                        landscapeZoom = viewer.config.landscapeZoom,
+                        landscapeZoom = !viewer.isSpreadMode && viewer.config.landscapeZoom,
                     ),
                 )
                 if (!isAnimated) {
@@ -183,6 +188,15 @@ class PagerPageHolder(
     }
 
     private fun process(page: ReaderPage, imageSource: BufferedSource): BufferedSource {
+        if (viewer.isSpreadMode) {
+            // A true two-page scan gets the full width rather than half of a paired spread.
+            if (!page.isWidePage && ImageUtil.isWideImage(imageSource.peek())) {
+                page.isWidePage = true
+                viewer.onWidePageDetected(page)
+            }
+            return imageSource
+        }
+
         if (viewer.config.dualPageRotateToFit) {
             return rotateDualPage(imageSource)
         }
@@ -249,7 +263,9 @@ class PagerPageHolder(
 
     override fun onImageLoaded() {
         super.onImageLoaded()
+        imageLoaded = true
         progressIndicator?.hide()
+        viewer.onSpreadPageLoaded(page)
     }
 
     /**
@@ -257,6 +273,7 @@ class PagerPageHolder(
      */
     override fun onImageLoadError() {
         super.onImageLoadError()
+        imageLoaded = false
         setError()
     }
 

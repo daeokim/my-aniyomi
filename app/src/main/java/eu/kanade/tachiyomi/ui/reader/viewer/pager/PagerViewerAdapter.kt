@@ -1,11 +1,14 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import android.view.View
 import android.view.ViewGroup
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import eu.kanade.tachiyomi.ui.reader.model.ReaderSpread
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.viewer.calculateChapterGap
 import eu.kanade.tachiyomi.util.system.createReaderThemeContext
@@ -70,13 +73,13 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
         // Add current chapter.
         val currPages = chapters.currChapter.pages
-        if (currPages != null) {
+        if (!currPages.isNullOrEmpty()) {
             val pages = currPages.toMutableList()
 
             val lastPage = pages.last()
 
             // Insert preprocessed pages into current page list
-            preprocessed.keys.sortedDescending()
+            preprocessed.keys.takeUnless { viewer.isSpreadMode }.orEmpty().sortedDescending()
                 .forEach { key ->
                     if (lastPage.index == key) {
                         insertPageLastPage = preprocessed[key]
@@ -112,12 +115,24 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
         // Resets double-page splits, else insert pages get misplaced
         items.filterIsInstance<InsertPage>().also { items.removeAll(it) }
 
-        if (viewer is R2LPagerViewer) {
-            newItems.reverse()
+        val arranged = if (viewer.isSpreadMode) {
+            FoldLayoutPolicy.group(
+                newItems,
+                { it is ReaderPage && it !is InsertPage },
+                { (it as ReaderPage).index },
+                { (it as ReaderPage).chapter },
+                { (it as ReaderPage).isWidePage },
+                viewer.config.foldSpreadCoverAlone,
+            ).map {
+                if (it.size == 2) ReaderSpread(it[0] as ReaderPage, it[1] as ReaderPage) else it[0]
+            }.toMutableList()
+        } else {
+            newItems
         }
+        if (viewer is R2LPagerViewer) arranged.reverse()
 
         preprocessed = mutableMapOf()
-        items = newItems
+        items = arranged
         notifyDataSetChanged()
 
         // Will skip insert page otherwise
@@ -138,6 +153,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
      */
     override fun createView(container: ViewGroup, position: Int): View {
         return when (val item = items[position]) {
+            is ReaderSpread -> PagerSpreadHolder(readerThemedContext, viewer, item)
             is ReaderPage -> PagerPageHolder(readerThemedContext, viewer, item)
             is ChapterTransition -> PagerTransitionHolder(readerThemedContext, viewer, item)
             else -> throw NotImplementedError("Holder for ${item.javaClass} not implemented")
@@ -160,6 +176,7 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
     }
 
     fun onPageSplit(currentPage: Any?, newPage: InsertPage) {
+        if (viewer.isSpreadMode) return
         if (currentPage !is ReaderPage) return
 
         val currentIndex = items.indexOf(currentPage)
@@ -200,5 +217,9 @@ class PagerViewerAdapter(private val viewer: PagerViewer) : ViewPagerAdapter() {
 
     fun refresh() {
         readerThemedContext = viewer.activity.createReaderThemeContext()
+    }
+
+    fun positionOf(page: ReaderPage): Int = items.indexOfFirst {
+        it == page || (it is ReaderSpread && it.contains(page))
     }
 }

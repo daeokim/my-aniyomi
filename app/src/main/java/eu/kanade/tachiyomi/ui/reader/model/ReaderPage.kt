@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.model
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import eu.kanade.tachiyomi.source.model.Page
 import java.io.InputStream
 
@@ -11,4 +13,7 @@ open class ReaderPage(
 ) : Page(index, url, imageUrl, null) {
 
     open lateinit var chapter: ReaderChapter
+
+    /** Personal fork: discovered from image dimensions, only kept for this loaded chapter. */
+    var isWidePage = false
 }

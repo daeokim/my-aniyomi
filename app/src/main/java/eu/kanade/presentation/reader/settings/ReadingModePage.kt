@@ -1,5 +1,7 @@
 package eu.kanade.presentation.reader.settings
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +73,17 @@ internal fun ColumnScope.ReadingModePage(screenModel: ReaderSettingsScreenModel)
 private fun ColumnScope.PagerViewerSettings(screenModel: ReaderSettingsScreenModel) {
     HeadingItem(MR.strings.pager_viewer)
 
+    // Personal fork: this pairs separate pages, unlike the original image-splitting option.
+    HeadingItem("폴드 화면")
+    CheckboxItem(
+        label = "넓은 화면에서 두 쪽 모아보기",
+        pref = screenModel.preferences.foldSpreadEnabled(),
+    )
+    CheckboxItem(
+        label = "표지는 한 쪽으로 보기",
+        pref = screenModel.preferences.foldSpreadCoverAlone(),
+    )
+
     val navigationModePager by screenModel.preferences.navigationModePager().collectAsState()
     val pagerNavInverted by screenModel.preferences.pagerNavInverted().collectAsState()
     TapZonesItems(
@@ -120,13 +133,13 @@ private fun ColumnScope.PagerViewerSettings(screenModel: ReaderSettingsScreenMod
     val dualPageSplitPaged by screenModel.preferences.dualPageSplitPaged().collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_dual_page_split),
-        pref = screenModel.preferences.dualPageInvertPaged(),
+        pref = screenModel.preferences.dualPageSplitPaged(),
     )
 
     if (dualPageSplitPaged) {
         CheckboxItem(
             label = stringResource(MR.strings.pref_dual_page_invert),
-            pref = screenModel.preferences.dualPageRotateToFitInvert(),
+            pref = screenModel.preferences.dualPageInvertPaged(),
         )
     }
 

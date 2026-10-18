@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.browse.manga.source.browse
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,12 +40,14 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.core.util.ifMangaSourcesLoaded
+import eu.kanade.presentation.browse.AdaptiveSourceOverview
 import eu.kanade.presentation.browse.RemoveEntryDialog
 import eu.kanade.presentation.browse.manga.BrowseSourceContent
 import eu.kanade.presentation.browse.manga.MissingSourceScreen
 import eu.kanade.presentation.browse.manga.components.BrowseMangaSourceToolbar
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.entries.manga.DuplicateMangaDialog
+import eu.kanade.presentation.library.components.EntryCompactGridItem
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.core.common.Constants
@@ -61,6 +65,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import mihon.presentation.core.util.collectAsLazyPagingItems
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.domain.entries.manga.model.MangaCover
 import tachiyomi.domain.source.manga.model.StubMangaSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -68,6 +74,7 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.entries.manga.LocalMangaSource
+import androidx.paging.compose.collectAsLazyPagingItems as collectOverviewItems
 
 data class BrowseMangaSourceScreen(
     val sourceId: Long,
@@ -127,6 +134,26 @@ data class BrowseMangaSourceScreen(
             assistUrl = (screenModel.source as? HttpSource)?.baseUrl
         }
 
+        val onMangaClick: (Manga) -> Unit = { navigator.push(MangaScreen(it.id, true)) }
+        val onMangaLongClick: (Manga) -> Unit = { manga ->
+            scope.launchIO {
+                val duplicateManga = screenModel.getDuplicateLibraryManga(manga)
+                when {
+                    manga.favorite -> screenModel.setDialog(
+                        BrowseMangaSourceScreenModel.Dialog.RemoveManga(manga),
+                    )
+                    duplicateManga != null -> screenModel.setDialog(
+                        BrowseMangaSourceScreenModel.Dialog.AddDuplicateManga(
+                            manga,
+                            duplicateManga,
+                        ),
+                    )
+                    else -> screenModel.addFavorite(manga)
+                }
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+
         var topBarHeight by remember { mutableIntStateOf(0) }
         Scaffold(
             topBar = {
@@ -155,7 +182,12 @@ data class BrowseMangaSourceScreen(
                         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                     ) {
                         FilterChip(
-                            selected = state.listing == Listing.Popular,
+                            selected = screenModel.showOverview,
+                            onClick = screenModel::openOverview,
+                            label = { Text("최신·인기") },
+                        )
+                        FilterChip(
+                            selected = !screenModel.showOverview && state.listing == Listing.Popular,
                             onClick = {
                                 screenModel.resetFilters()
                                 screenModel.setListing(Listing.Popular)
@@ -174,7 +206,7 @@ data class BrowseMangaSourceScreen(
                         )
                         if ((screenModel.source as CatalogueSource).supportsLatest) {
                             FilterChip(
-                                selected = state.listing == Listing.Latest,
+                                selected = !screenModel.showOverview && state.listing == Listing.Latest,
                                 onClick = {
                                     screenModel.resetFilters()
                                     screenModel.setListing(Listing.Latest)
@@ -194,7 +226,7 @@ data class BrowseMangaSourceScreen(
                         }
                         if (state.filters.isNotEmpty()) {
                             FilterChip(
-                                selected = state.listing is Listing.Search,
+                                selected = !screenModel.showOverview && state.listing is Listing.Search,
                                 onClick = screenModel::openFilterSheet,
                                 leadingIcon = {
                                     Icon(
@@ -216,38 +248,50 @@ data class BrowseMangaSourceScreen(
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         ) { paddingValues ->
-            BrowseSourceContent(
-                source = screenModel.source,
-                mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems(),
-                columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
-                entries = screenModel.getColumnsPreferenceForCurrentOrientation(LocalConfiguration.current.orientation),
-                topBarHeight = topBarHeight,
-                displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
-                contentPadding = paddingValues,
-                onWebViewClick = onWebViewClick,
-                onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
-                onLocalSourceHelpClick = onHelpClick,
-                onMangaClick = { navigator.push((MangaScreen(it.id, true))) },
-                onMangaLongClick = { manga ->
-                    scope.launchIO {
-                        val duplicateManga = screenModel.getDuplicateLibraryManga(manga)
-                        when {
-                            manga.favorite -> screenModel.setDialog(
-                                BrowseMangaSourceScreenModel.Dialog.RemoveManga(manga),
-                            )
-                            duplicateManga != null -> screenModel.setDialog(
-                                BrowseMangaSourceScreenModel.Dialog.AddDuplicateManga(
-                                    manga,
-                                    duplicateManga,
-                                ),
-                            )
-                            else -> screenModel.addFavorite(manga)
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    }
-                },
-            )
+            if (screenModel.showOverview) {
+                AdaptiveSourceOverview(
+                    latest = if ((screenModel.source as CatalogueSource).supportsLatest) {
+                        screenModel.overviewLatest.collectOverviewItems()
+                    } else {
+                        null
+                    },
+                    popular = screenModel.overviewPopular.collectOverviewItems(),
+                    contentPadding = paddingValues,
+                    onOpenLatest = { screenModel.setListing(Listing.Latest) },
+                    onOpenPopular = { screenModel.setListing(Listing.Popular) },
+                ) { manga ->
+                    EntryCompactGridItem(
+                        title = manga.title,
+                        coverData = MangaCover(
+                            mangaId = manga.id,
+                            sourceId = manga.source,
+                            isMangaFavorite = manga.favorite,
+                            url = manga.thumbnailUrl,
+                            lastModified = manga.coverLastModified,
+                        ),
+                        onClick = { onMangaClick(manga) },
+                        onLongClick = { onMangaLongClick(manga) },
+                    )
+                }
+            } else {
+                BrowseSourceContent(
+                    source = screenModel.source,
+                    mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems(),
+                    columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
+                    entries = screenModel.getColumnsPreferenceForCurrentOrientation(
+                        LocalConfiguration.current.orientation,
+                    ),
+                    topBarHeight = topBarHeight,
+                    displayMode = screenModel.displayMode,
+                    snackbarHostState = snackbarHostState,
+                    contentPadding = paddingValues,
+                    onWebViewClick = onWebViewClick,
+                    onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
+                    onLocalSourceHelpClick = onHelpClick,
+                    onMangaClick = onMangaClick,
+                    onMangaLongClick = onMangaLongClick,
+                )
+            }
         }
 
         val onDismissRequest = { screenModel.setDialog(null) }

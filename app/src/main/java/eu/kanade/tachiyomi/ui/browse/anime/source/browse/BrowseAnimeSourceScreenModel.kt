@@ -1,8 +1,11 @@
 package eu.kanade.tachiyomi.ui.browse.anime.source.browse
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import android.content.res.Configuration
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
@@ -36,6 +39,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.mapAsCheckboxState
 import tachiyomi.core.common.util.lang.launchIO
@@ -79,6 +84,37 @@ class BrowseAnimeSourceScreenModel(
     var displayMode by sourcePreferences.sourceDisplayMode().asState(screenModelScope)
 
     val source = sourceManager.getOrStub(sourceId)
+
+    // Personal fork: retain two independent Paging streams across window changes.
+    var showOverview by mutableStateOf(
+        listingQuery == null ||
+            listingQuery == GetRemoteAnime.QUERY_POPULAR ||
+            listingQuery == GetRemoteAnime.QUERY_LATEST,
+    )
+        private set
+
+    private val overviewMutex = Mutex()
+
+    val overviewPopular by lazy { overviewPager(GetRemoteAnime.QUERY_POPULAR) }
+    val overviewLatest by lazy { overviewPager(GetRemoteAnime.QUERY_LATEST) }
+
+    private fun overviewPager(query: String) = Pager(PagingConfig(pageSize = 25)) {
+        getRemoteAnime.subscribe(sourceId, query, AnimeFilterList())
+    }.flow.map { data ->
+        data.map { remote ->
+            val local = overviewMutex.withLock {
+                networkToLocalAnime.await(remote.toDomainAnime(sourceId))
+            }
+            getAnime.subscribe(local.url, local.source)
+                .filterNotNull()
+                .stateIn(screenModelScope)
+        }.filter { !hideInLibraryItems || !it.value.favorite }
+    }.cachedIn(screenModelScope)
+
+    fun openOverview() {
+        setListing(Listing.Popular)
+        showOverview = true
+    }
 
     init {
         mutableState.update {
@@ -149,6 +185,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun setListing(listing: Listing) {
+        showOverview = false
         mutableState.update { it.copy(listing = listing, toolbarQuery = null) }
     }
 
@@ -161,6 +198,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun search(query: String? = null, filters: AnimeFilterList? = null) {
+        showOverview = false
         val input = state.value.listing as? Listing.Search
             ?: Listing.Search(query = null, filters = source.getFilterList())
 
@@ -176,6 +214,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun searchGenre(genreName: String) {
+        showOverview = false
         val defaultFilters = source.getFilterList()
         var genreExists = false
 

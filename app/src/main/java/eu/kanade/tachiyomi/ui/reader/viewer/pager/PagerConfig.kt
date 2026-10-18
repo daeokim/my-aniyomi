@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.pager
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import eu.kanade.tachiyomi.ui.reader.viewer.ViewerConfig
@@ -33,6 +35,14 @@ class PagerConfig(
 
     var dualPageSplitChangedListener: ((Boolean) -> Unit)? = null
 
+    var foldSpreadEnabled = readerPreferences.foldSpreadEnabled().get()
+        private set
+
+    var foldSpreadCoverAlone = readerPreferences.foldSpreadCoverAlone().get()
+        private set
+
+    var foldSpreadChangedListener: (() -> Unit)? = null
+
     var imageScaleType = 1
         private set
 
@@ -49,6 +59,12 @@ class PagerConfig(
         private set
 
     init {
+        readerPreferences.foldSpreadEnabled()
+            .register({ foldSpreadEnabled = it }, { foldSpreadChangedListener?.invoke() })
+
+        readerPreferences.foldSpreadCoverAlone()
+            .register({ foldSpreadCoverAlone = it }, { foldSpreadChangedListener?.invoke() })
+
         readerPreferences.readerTheme()
             .register(
                 {

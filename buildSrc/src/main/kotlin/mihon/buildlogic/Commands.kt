@@ -1,21 +1,20 @@
 package mihon.buildlogic
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import org.gradle.api.Project
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-// Git is needed in your system PATH for these commands to work.
-// If it's not installed, you can return a random value as a workaround
+// Personal fork: source archives can build without a git checkout.
 fun Project.getCommitCount(): String {
-    return runCommand("git rev-list --count HEAD")
-    // return "1"
+    return runCatching { runCommand("git rev-list --count HEAD") }.getOrDefault("1")
 }
 
 fun Project.getGitSha(): String {
-    return runCommand("git rev-parse --short HEAD")
-    // return "1"
+    return runCatching { runCommand("git rev-parse --short HEAD") }.getOrDefault("personal-fold8")
 }
 
 private val BUILD_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
@@ -27,7 +26,8 @@ private val BUILD_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:
  */
 fun Project.getBuildTime(useLastCommitTime: Boolean): String {
     return if (useLastCommitTime) {
-        val epoch = runCommand("git log -1 --format=%ct").toLong()
+        val epoch = runCatching { runCommand("git log -1 --format=%ct").toLong() }
+            .getOrElse { Instant.now().epochSecond }
         Instant.ofEpochSecond(epoch).atOffset(ZoneOffset.UTC).format(BUILD_TIME_FORMATTER)
     } else {
         LocalDateTime.now(ZoneOffset.UTC).format(BUILD_TIME_FORMATTER)

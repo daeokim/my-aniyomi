@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.browse.anime.source.browse
 
+// Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,12 +40,14 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.core.util.ifAnimeSourcesLoaded
+import eu.kanade.presentation.browse.AdaptiveSourceOverview
 import eu.kanade.presentation.browse.RemoveEntryDialog
 import eu.kanade.presentation.browse.anime.BrowseAnimeSourceContent
 import eu.kanade.presentation.browse.anime.MissingSourceScreen
 import eu.kanade.presentation.browse.anime.components.BrowseAnimeSourceToolbar
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.entries.anime.DuplicateAnimeDialog
+import eu.kanade.presentation.library.components.EntryCompactGridItem
 import eu.kanade.presentation.util.AssistContentScreen
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
@@ -61,6 +65,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import mihon.presentation.core.util.collectAsLazyPagingItems
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.domain.entries.anime.model.Anime
+import tachiyomi.domain.entries.anime.model.AnimeCover
 import tachiyomi.domain.source.anime.model.StubAnimeSource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.Scaffold
@@ -68,6 +74,7 @@ import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.LoadingScreen
 import tachiyomi.source.local.entries.anime.LocalAnimeSource
+import androidx.paging.compose.collectAsLazyPagingItems as collectOverviewItems
 
 data class BrowseAnimeSourceScreen(
     val sourceId: Long,
@@ -127,6 +134,26 @@ data class BrowseAnimeSourceScreen(
             assistUrl = (screenModel.source as? AnimeHttpSource)?.getHomeUrl()
         }
 
+        val onAnimeClick: (Anime) -> Unit = { navigator.push(AnimeScreen(it.id, true)) }
+        val onAnimeLongClick: (Anime) -> Unit = { anime ->
+            scope.launchIO {
+                val duplicateAnime = screenModel.getDuplicateAnimelibAnime(anime)
+                when {
+                    anime.favorite -> screenModel.setDialog(
+                        BrowseAnimeSourceScreenModel.Dialog.RemoveAnime(anime),
+                    )
+                    duplicateAnime != null -> screenModel.setDialog(
+                        BrowseAnimeSourceScreenModel.Dialog.AddDuplicateAnime(
+                            anime,
+                            duplicateAnime,
+                        ),
+                    )
+                    else -> screenModel.addFavorite(anime)
+                }
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+
         var topBarHeight by remember { mutableIntStateOf(0) }
         Scaffold(
             topBar = {
@@ -155,7 +182,12 @@ data class BrowseAnimeSourceScreen(
                         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                     ) {
                         FilterChip(
-                            selected = state.listing == Listing.Popular,
+                            selected = screenModel.showOverview,
+                            onClick = screenModel::openOverview,
+                            label = { Text("최신·인기") },
+                        )
+                        FilterChip(
+                            selected = !screenModel.showOverview && state.listing == Listing.Popular,
                             onClick = {
                                 screenModel.resetFilters()
                                 screenModel.setListing(Listing.Popular)
@@ -174,7 +206,7 @@ data class BrowseAnimeSourceScreen(
                         )
                         if (screenModel.source.supportsLatest) {
                             FilterChip(
-                                selected = state.listing == Listing.Latest,
+                                selected = !screenModel.showOverview && state.listing == Listing.Latest,
                                 onClick = {
                                     screenModel.resetFilters()
                                     screenModel.setListing(Listing.Latest)
@@ -194,7 +226,7 @@ data class BrowseAnimeSourceScreen(
                         }
                         if (state.filters.isNotEmpty()) {
                             FilterChip(
-                                selected = state.listing is Listing.Search,
+                                selected = !screenModel.showOverview && state.listing is Listing.Search,
                                 onClick = screenModel::openFilterSheet,
                                 leadingIcon = {
                                     Icon(
@@ -216,38 +248,50 @@ data class BrowseAnimeSourceScreen(
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         ) { paddingValues ->
-            BrowseAnimeSourceContent(
-                source = screenModel.source,
-                animeList = screenModel.animePagerFlowFlow.collectAsLazyPagingItems(),
-                columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
-                entries = screenModel.getColumnsPreferenceForCurrentOrientation(LocalConfiguration.current.orientation),
-                topBarHeight = topBarHeight,
-                displayMode = screenModel.displayMode,
-                snackbarHostState = snackbarHostState,
-                contentPadding = paddingValues,
-                onWebViewClick = onWebViewClick,
-                onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
-                onLocalAnimeSourceHelpClick = onHelpClick,
-                onAnimeClick = { navigator.push((AnimeScreen(it.id, true))) },
-                onAnimeLongClick = { anime ->
-                    scope.launchIO {
-                        val duplicateAnime = screenModel.getDuplicateAnimelibAnime(anime)
-                        when {
-                            anime.favorite -> screenModel.setDialog(
-                                BrowseAnimeSourceScreenModel.Dialog.RemoveAnime(anime),
-                            )
-                            duplicateAnime != null -> screenModel.setDialog(
-                                BrowseAnimeSourceScreenModel.Dialog.AddDuplicateAnime(
-                                    anime,
-                                    duplicateAnime,
-                                ),
-                            )
-                            else -> screenModel.addFavorite(anime)
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    }
-                },
-            )
+            if (screenModel.showOverview) {
+                AdaptiveSourceOverview(
+                    latest = if (screenModel.source.supportsLatest) {
+                        screenModel.overviewLatest.collectOverviewItems()
+                    } else {
+                        null
+                    },
+                    popular = screenModel.overviewPopular.collectOverviewItems(),
+                    contentPadding = paddingValues,
+                    onOpenLatest = { screenModel.setListing(Listing.Latest) },
+                    onOpenPopular = { screenModel.setListing(Listing.Popular) },
+                ) { anime ->
+                    EntryCompactGridItem(
+                        title = anime.title,
+                        coverData = AnimeCover(
+                            animeId = anime.id,
+                            sourceId = anime.source,
+                            isAnimeFavorite = anime.favorite,
+                            url = anime.thumbnailUrl,
+                            lastModified = anime.coverLastModified,
+                        ),
+                        onClick = { onAnimeClick(anime) },
+                        onLongClick = { onAnimeLongClick(anime) },
+                    )
+                }
+            } else {
+                BrowseAnimeSourceContent(
+                    source = screenModel.source,
+                    animeList = screenModel.animePagerFlowFlow.collectAsLazyPagingItems(),
+                    columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
+                    entries = screenModel.getColumnsPreferenceForCurrentOrientation(
+                        LocalConfiguration.current.orientation,
+                    ),
+                    topBarHeight = topBarHeight,
+                    displayMode = screenModel.displayMode,
+                    snackbarHostState = snackbarHostState,
+                    contentPadding = paddingValues,
+                    onWebViewClick = onWebViewClick,
+                    onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
+                    onLocalAnimeSourceHelpClick = onHelpClick,
+                    onAnimeClick = onAnimeClick,
+                    onAnimeLongClick = onAnimeLongClick,
+                )
+            }
         }
 
         val onDismissRequest = { screenModel.setDialog(null) }

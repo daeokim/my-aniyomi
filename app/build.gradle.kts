@@ -2,6 +2,7 @@ import mihon.buildlogic.Config
 import mihon.buildlogic.getBuildTime
 import mihon.buildlogic.getCommitCount
 import mihon.buildlogic.getGitSha
+import java.util.Properties
 
 plugins {
     id("mihon.android.application")
@@ -13,19 +14,25 @@ plugins {
 
 shortcutHelper.setFilePath("./shortcuts.xml")
 
+// Personal fork: signing material lives outside git and is reused for private updates.
+val personalSigningFile = rootProject.file("personal/signing/signing.properties")
+val personalSigning = Properties().apply {
+    if (personalSigningFile.isFile) personalSigningFile.inputStream().use(::load)
+}
+
 android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 132
-        versionName = "0.18.2.1"
+        versionCode = 13201
+        versionName = "0.18.2.1-personal-fold8.1"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
         buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLastCommitTime = false)}\"")
-        buildConfigField("boolean", "UPDATER_ENABLED", "${Config.enableUpdater}")
+        buildConfigField("boolean", "UPDATER_ENABLED", "false")
 
         // Put these fields in acra.properties
         // val acraProperties = Properties()
@@ -42,9 +49,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    if (personalSigningFile.isFile) {
+        signingConfigs.create("personal") {
+            storeFile = rootProject.file("personal/signing/personal.jks")
+            storePassword = personalSigning.getProperty("storePassword")
+            keyAlias = personalSigning.getProperty("keyAlias")
+            keyPassword = personalSigning.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         val debug by getting {
-            applicationIdSuffix = ".dev"
             versionNameSuffix = "-${getCommitCount()}"
             isPseudoLocalesEnabled = true
         }
@@ -61,9 +76,6 @@ android {
 
         create("preview") {
             initWith(release)
-
-            applicationIdSuffix = ".debug"
-
             versionNameSuffix = debug.versionNameSuffix
             signingConfig = debug.signingConfig
 
@@ -77,12 +89,16 @@ android {
             isDebuggable = false
             isProfileable = true
             versionNameSuffix = "-benchmark"
-            applicationIdSuffix = ".benchmark"
 
             signingConfig = debug.signingConfig
 
             matchingFallbacks.addAll(commonMatchingFallbacks)
         }
+    }
+
+    buildTypes.configureEach {
+        // No variant gets a different package: these APKs replace the original app.
+        signingConfigs.findByName("personal")?.let { signingConfig = it }
     }
 
     sourceSets {
@@ -93,9 +109,9 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            isUniversalApk = false
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include("arm64-v8a")
         }
     }
 
