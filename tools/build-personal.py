@@ -35,7 +35,7 @@ def main():
         subprocess.run([
             'keytool', '-genkeypair', '-noprompt', '-keystore', str(keystore), '-alias', 'personal',
             '-keyalg', 'RSA', '-keysize', '3072', '-validity', '10000',
-            '-dname', 'CN=Personal DaeoYomi',
+            '-dname', 'CN=Personal Dtoon',
             '-storepass:env', 'PERSONAL_KEY_PASSWORD', '-keypass:env', 'PERSONAL_KEY_PASSWORD',
         ], env=env, check=True)
         config.write_text(f'storePassword={password}\nkeyPassword={password}\nkeyAlias=personal\n')
@@ -49,9 +49,9 @@ def main():
         sys.exit('Signed arm64 APK not found; unsigned/debug artifacts are not deliverables.')
     output = ROOT / 'personal/output'
     output.mkdir(exist_ok=True)
-    target = output / 'DaeoYomi-fold8.apk'
+    target = output / 'Dtoon-fold8.apk'
     shutil.copyfile(apk, target)
-    (output / 'SHA256SUMS').write_text(hashlib.sha256(target.read_bytes()).hexdigest() + '  DaeoYomi-fold8.apk\n')
+    (output / 'SHA256SUMS').write_text(hashlib.sha256(target.read_bytes()).hexdigest() + '  Dtoon-fold8.apk\n')
     print('Built:', target)
     print('Keep personal/signing securely: those same files are required for future private updates.')
 

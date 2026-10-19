@@ -44,6 +44,11 @@ import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.map
+import eu.kanade.tachiyomi.data.recommendations.RelatedMangaRepository
+import eu.kanade.tachiyomi.data.recommendations.RelatedMangaState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.catch
@@ -240,6 +245,7 @@ class MangaScreenModel(
 
             // Start observe tracking since it only needs mangaId
             observeTrackers()
+            observeRecommendations()
 
             // Fetch info-chapters when needed
             if (screenModelScope.isActive) {
@@ -252,6 +258,44 @@ class MangaScreenModel(
 
             // Initial loading finished
             updateSuccessState { it.copy(isRefreshingData = false) }
+        }
+    }
+
+    private var relatedJob: Job? = null
+    private var recommendationSeed: Int? = null
+
+    private fun observeRecommendations() {
+        screenModelScope.launchIO {
+            getTracks.subscribe(mangaId)
+                .map { tracks -> tracks.firstOrNull { it.trackerId == TrackerManager.ANILIST }?.remoteId?.toInt()?.takeIf { it > 0 } }
+                .distinctUntilChanged()
+                .collectLatest { id ->
+                    recommendationSeed = id
+                    loadRelatedManga(forceRefresh = false)
+                }
+        }
+    }
+
+    fun chooseRecommendationSeed(id: Int) {
+        recommendationSeed = id
+        loadRelatedManga(forceRefresh = false)
+    }
+
+    fun retryRelatedManga() = loadRelatedManga(forceRefresh = true)
+
+    private fun loadRelatedManga(forceRefresh: Boolean) {
+        val title = successState?.manga?.title ?: return
+        relatedJob?.cancel()
+        relatedJob = screenModelScope.launchIO {
+            updateSuccessState { it.copy(relatedManga = RelatedMangaState.Loading) }
+            val result = try {
+                RelatedMangaRepository.shared.load(title, recommendationSeed, forceRefresh)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                RelatedMangaState.Error
+            }
+            updateSuccessState { it.copy(relatedManga = result) }
         }
     }
 
@@ -1153,6 +1197,7 @@ class MangaScreenModel(
             val isRefreshingData: Boolean = false,
             val dialog: Dialog? = null,
             val hasPromptedToAddBefore: Boolean = false,
+            val relatedManga: RelatedMangaState = RelatedMangaState.Loading,
         ) : State {
             val processedChapters by lazy {
                 chapters.applyFilters(manga).toList()

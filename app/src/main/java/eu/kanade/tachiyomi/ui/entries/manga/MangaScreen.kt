@@ -35,6 +35,7 @@ import eu.kanade.presentation.entries.components.SetIntervalDialog
 import eu.kanade.presentation.entries.manga.ChapterSettingsDialog
 import eu.kanade.presentation.entries.manga.DuplicateMangaDialog
 import eu.kanade.presentation.entries.manga.MangaScreen
+import eu.kanade.presentation.entries.manga.components.RelatedMangaSection
 import eu.kanade.presentation.entries.manga.components.MangaCoverDialog
 import eu.kanade.presentation.entries.manga.components.ScanlatorFilterDialog
 import eu.kanade.presentation.util.AssistContentScreen
@@ -172,6 +173,14 @@ class MangaScreen(
             onChapterSelected = screenModel::toggleSelection,
             onAllChapterSelected = screenModel::toggleAllSelection,
             onInvertSelection = screenModel::invertSelection,
+            relatedContent = {
+                RelatedMangaSection(
+                    state = successState.relatedManga,
+                    onRetry = screenModel::retryRelatedManga,
+                    onChoose = screenModel::chooseRecommendationSeed,
+                    onOpen = { navigator.push(GlobalMangaSearchScreen(it.title)) },
+                )
+            },
         )
 
         var showScanlatorsDialog by remember { mutableStateOf(false) }

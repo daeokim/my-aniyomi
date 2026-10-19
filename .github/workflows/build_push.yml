@@ -1,4 +1,4 @@
-name: Private DaeoYomi build
+name: Private Dtoon build
 on:
   workflow_dispatch:
   push:
@@ -27,6 +27,9 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.1'
       - name: Run independent policy tests
         run: bash tools/test-personal.sh
+      - name: Check public recommendation API
+        continue-on-error: true
+        run: python3 tools/check-related-api.py
       - name: Compile app and run Android JVM tests
         run: bash gradlew :app:assembleRelease :app:testReleaseUnitTest -Pdisable-code-shrink --no-daemon
       - name: Prepare offline signing tools
@@ -46,5 +49,7 @@ jobs:
         if: always()
         with:
           name: private-test-results
-          path: app/build/test-results/
+          path: |
+            app/build/test-results/
+            personal/output/anilist-api-check.json
           retention-days: 7

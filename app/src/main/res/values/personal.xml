@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Personal fork: distinct branding with the original application ID retained. -->
 <resources>
-    <string name="personal_app_name" translatable="false">DaeoYomi</string>
-    <color name="personal_launcher_background">#102C3B</color>
+    <string name="personal_app_name" translatable="false">Dtoon</string>
+    <color name="personal_launcher_background">#000000</color>
 </resources>
