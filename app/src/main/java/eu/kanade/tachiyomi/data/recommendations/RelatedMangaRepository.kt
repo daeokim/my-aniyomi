@@ -102,7 +102,7 @@ class RelatedMangaRepository(
         val shared by lazy { RelatedMangaRepository() }
 
         fun normalizeTitle(title: String): String = Normalizer.normalize(title, Normalizer.Form.NFKC)
-            .replace(Regex("[\\[(](완결|연재|단행본|컬러|웹툰|개정판|완전판)[\\])]"), "")
+            .replace(Regex("[\\[(](완결|연재|단행본|컬러|웹툰|개정판|완전판)[)\\]]"), "")
             .lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
 
         private fun isComic(media: Media) = media.id > 0 && media.type == "MANGA" && media.format != "NOVEL"
