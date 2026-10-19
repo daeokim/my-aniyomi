@@ -106,7 +106,7 @@ private fun <T : Any> CatalogGridPage(
     val key = PersonalStore.key(queryKey)
     val savedIndex = remember(key) { PersonalStore.number("grid_index:$key").get().coerceAtLeast(0) }
     val savedOffset = remember(key) { PersonalStore.number("grid_offset:$key").get().coerceAtLeast(0) }
-    val state = rememberLazyGridState()
+    val state = rememberLazyGridState(savedIndex, savedOffset)
     var restored by remember(key) { mutableStateOf(savedIndex == 0) }
     LaunchedEffect(key, items.itemCount, items.loadState.append, items.loadState.refresh) {
         if (!restored && items.itemCount > 0 && items.loadState.refresh !is LoadState.Loading) {

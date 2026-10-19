@@ -76,7 +76,15 @@ internal class HttpPageLoader(
             if (e is CancellationException) {
                 throw e
             }
-            source.getPageList(chapter.chapter)
+            try {
+                source.getPageList(chapter.chapter).also {
+                    eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${source.id}", "이미지", null)
+                }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${source.id}", "이미지", failure)
+                throw failure
+            }
         }
         return pages.mapIndexed { index, page ->
             // Don't trust sources and use our own indexing

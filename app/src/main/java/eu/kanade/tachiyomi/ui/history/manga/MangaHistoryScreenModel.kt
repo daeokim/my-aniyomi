@@ -104,7 +104,7 @@ class MangaHistoryScreenModel(
     }
 
     suspend fun getNextChapter(): Chapter? {
-        return withIOContext { getNextChapters.await(onlyUnread = false).firstOrNull() }
+        return withIOContext { Injekt.get<tachiyomi.domain.history.manga.repository.MangaHistoryRepository>().getLastMangaHistory()?.mangaId?.let { eu.kanade.tachiyomi.data.personal.ResumeResolver.manga(it) } }
     }
 
     fun getNextChapterForManga(mangaId: Long, chapterId: Long) {

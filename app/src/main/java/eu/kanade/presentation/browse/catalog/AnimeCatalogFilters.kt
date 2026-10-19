@@ -60,13 +60,13 @@ object AnimeCatalogFilters {
                 CatalogTab.LATEST -> setOf("최신순", "최신", "업데이트순", "최근 업데이트순", "latest", "updated", "recently updated")
                 else -> emptySet()
             }
-            if (f is Filter.Select<*> && f.name.trim().lowercase() in setOf("정렬", "정렬순", "정렬 기준", "sort", "order")) {
+            if (f is AnimeFilter.Select<*> && f.name.trim().lowercase() in setOf("정렬", "정렬순", "정렬 기준", "sort", "order")) {
                 val i = f.values.indexOfFirst { it.toString().trim().lowercase() in sortNames }
                 if (i >= 0) f.state = i
             }
-            if (f is Filter.Sort) {
+            if (f is AnimeFilter.Sort) {
                 val i = f.values.indexOfFirst { it.trim().lowercase() in sortNames }
-                if (i >= 0) f.state = Filter.Sort.Selection(i, false)
+                if (i >= 0) f.state = AnimeFilter.Sort.Selection(i, false)
             }
             if (request.tab == CatalogTab.WEEKDAY && f is AnimeFilter.Select<*> && CatalogPolicy.isDay(f.name)) {
                 val i = CatalogPolicy.dayIndex(f.values.map { it.toString() }, request.weekday)

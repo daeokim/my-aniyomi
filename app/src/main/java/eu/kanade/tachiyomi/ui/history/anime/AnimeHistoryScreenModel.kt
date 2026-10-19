@@ -104,7 +104,7 @@ class AnimeHistoryScreenModel(
     }
 
     suspend fun getNextEpisode(): Episode? {
-        return withIOContext { getNextEpisodes.await(onlyUnseen = false).firstOrNull() }
+        return withIOContext { Injekt.get<tachiyomi.domain.history.anime.repository.AnimeHistoryRepository>().getLastAnimeHistory()?.animeId?.let { eu.kanade.tachiyomi.data.personal.ResumeResolver.anime(it) } }
     }
 
     fun getNextEpisodeForAnime(animeId: Long, episodeId: Long) {
