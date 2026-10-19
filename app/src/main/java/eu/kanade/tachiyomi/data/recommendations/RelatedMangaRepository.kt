@@ -20,14 +20,14 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.minutes
 
-data class RelatedManga(val id: Int, val title: String, val cover: String?, val aliases: List<String>)
+data class RelatedManga(val id: Int, val title: String, val cover: String?, val aliases: List<String>, val localId: Long? = null)
 
 sealed interface RelatedMangaState {
     data object Loading : RelatedMangaState
     data object Empty : RelatedMangaState
     data object Error : RelatedMangaState
     data class Choose(val candidates: List<RelatedManga>) : RelatedMangaState
-    data class Ready(val items: List<RelatedManga>, val sameGenre: Boolean = false) : RelatedMangaState
+    data class Ready(val items: List<RelatedManga>, val sameGenre: Boolean = false, val originLabel: String? = null) : RelatedMangaState
 }
 
 /** Public catalogue metadata only; this never reads or changes the user's AniList account. */

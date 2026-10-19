@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.entries.anime
 
+import eu.kanade.tachiyomi.data.personal.ResumeResolver
 import android.content.Context
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -748,16 +749,13 @@ class AnimeScreenModel(
     }
 
     suspend fun getNextUnseenEpisode(anime: Anime): Episode? {
-        return getEpisodesByAnimeId.await(anime.id).getNextUnseen(anime, downloadManager)
+        return ResumeResolver.anime(anime.id)
     }
 
     /**
      * Returns the next unseen episode or null if everything is seen.
      */
-    fun getNextUnseenEpisode(): Episode? {
-        val successState = successState ?: return null
-        return successState.episodes.getNextUnseen(successState.anime)
-    }
+    suspend fun getNextUnseenEpisode(): Episode? = ResumeResolver.anime(animeId)
 
     private fun getUnseenEpisodes(): List<Episode> {
         return successState?.processedEpisodes

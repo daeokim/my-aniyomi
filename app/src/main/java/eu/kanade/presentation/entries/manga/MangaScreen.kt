@@ -802,7 +802,7 @@ private fun LazyListScope.sharedChapterItems(
                             formatChapterNumber(item.chapter.chapterNumber),
                         )
                     } else {
-                        item.chapter.name
+                        eu.kanade.tachiyomi.data.personal.ChapterAccess.title(manga.source, item.chapter.name)
                     },
                     date = relativeDateTimeText(item.chapter.dateUpload),
                     readProgress = item.chapter.lastPageRead
@@ -813,11 +813,12 @@ private fun LazyListScope.sharedChapterItems(
                                 it + 1,
                             )
                         },
-                    scanlator = item.chapter.scanlator.takeIf { !it.isNullOrBlank() },
+                    scanlator = listOfNotNull(item.chapter.scanlator.takeIf { !it.isNullOrBlank() },
+                        eu.kanade.tachiyomi.data.personal.ChapterAccess.label(manga.source, item.chapter.name)).joinToString(" · ").takeIf { it.isNotBlank() },
                     read = item.chapter.read,
                     bookmark = item.chapter.bookmark,
                     selected = item.selected,
-                    downloadIndicatorEnabled = !isAnyChapterSelected && !manga.isLocal(),
+                    downloadIndicatorEnabled = !isAnyChapterSelected && !manga.isLocal() && !eu.kanade.tachiyomi.data.personal.ChapterAccess.restricted(manga.source, item.chapter.name),
                     downloadStateProvider = { item.downloadState },
                     downloadProgressProvider = { item.downloadProgress },
                     chapterSwipeStartAction = chapterSwipeStartAction,

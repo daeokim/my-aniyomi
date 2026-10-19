@@ -59,6 +59,11 @@ import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.time.Instant
+import eu.kanade.presentation.browse.catalog.*
+import eu.kanade.tachiyomi.data.personal.PersonalStore
+import androidx.paging.PagingData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter as AnimeSourceModelFilter
 
 class BrowseAnimeSourceScreenModel(
@@ -85,35 +90,50 @@ class BrowseAnimeSourceScreenModel(
 
     val source = sourceManager.getOrStub(sourceId)
 
-    // Personal fork: retain two independent Paging streams across window changes.
-    var showOverview by mutableStateOf(
-        listingQuery == null ||
-            listingQuery == GetRemoteAnime.QUERY_POPULAR ||
-            listingQuery == GetRemoteAnime.QUERY_LATEST,
-    )
+    private val catalogMutex = Mutex()
+    var catalogRevision by mutableStateOf(0)
         private set
-
-    private val overviewMutex = Mutex()
-
-    val overviewPopular by lazy { overviewPager(GetRemoteAnime.QUERY_POPULAR) }
-    val overviewLatest by lazy { overviewPager(GetRemoteAnime.QUERY_LATEST) }
-
-    private fun overviewPager(query: String) = Pager(PagingConfig(pageSize = 25)) {
-        getRemoteAnime.subscribe(sourceId, query, AnimeFilterList())
-    }.flow.map { data ->
-        data.map { remote ->
-            val local = overviewMutex.withLock {
-                networkToLocalAnime.await(remote.toDomainAnime(sourceId))
-            }
-            getAnime.subscribe(local.url, local.source)
-                .filterNotNull()
-                .stateIn(screenModelScope)
-        }.filter { !hideInLibraryItems || !it.value.favorite }
-    }.cachedIn(screenModelScope)
-
-    fun openOverview() {
-        setListing(Listing.Popular)
-        showOverview = true
+    var catalogTab by mutableStateOf(PersonalStore.number("catalog_tab:anime:$sourceId", if (listingQuery == GetRemoteAnime.QUERY_LATEST) 1 else 0).get())
+        private set
+    var catalogDay by mutableStateOf(PersonalStore.number("catalog_day:anime:$sourceId", CatalogPolicy.today()).get())
+        private set
+    val catalogSignature get() = PersonalStore.key(AnimeCatalogFilters.snapshot(state.value.filters) + (state.value.listing as? Listing.Search)?.query.orEmpty())
+    private var catalogScope = kotlinx.coroutines.CoroutineScope(screenModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(screenModelScope.coroutineContext[kotlinx.coroutines.Job]))
+    private var catalogContext: Pair<String, String>? = null
+    private val catalogFlows = linkedMapOf<CatalogRequest, Flow<PagingData<StateFlow<Anime>>>>()
+    val catalogCapability get() = AnimeCatalogFilters.capabilities(source.getFilterList(), source.supportsLatest)
+    fun selectCatalogTab(tab: Int) { catalogTab = tab; PersonalStore.number("catalog_tab:anime:$sourceId").set(tab) }
+    fun selectCatalogDay(day: Int) { catalogDay = day; PersonalStore.number("catalog_day:anime:$sourceId").set(day) }
+    fun catalogItems(tab: CatalogTab, day: Int): Flow<PagingData<StateFlow<Anime>>> {
+        val query = (state.value.listing as? Listing.Search)?.query.orEmpty()
+        val snapshot = AnimeCatalogFilters.snapshot(state.value.filters)
+        val request = CatalogRequest(tab, if (tab == CatalogTab.WEEKDAY) day else 0, snapshot, query)
+        val context = snapshot to query
+        if (catalogContext != context) {
+            catalogScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+            catalogScope = kotlinx.coroutines.CoroutineScope(screenModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(screenModelScope.coroutineContext[kotlinx.coroutines.Job]))
+            catalogFlows.clear()
+            catalogContext = context
+        }
+        val scope = catalogScope
+        return catalogFlows.getOrPut(request) {
+            Pager(PagingConfig(pageSize = 25, enablePlaceholders = false)) {
+                val fresh = AnimeCatalogFilters.apply(source.getFilterList(), request)
+                val defaults = AnimeCatalogFilters.snapshot(source.getFilterList())
+                val native = query.isBlank() && snapshot == defaults
+                val remoteQuery = when {
+                    tab == CatalogTab.POPULAR && native -> GetRemoteAnime.QUERY_POPULAR
+                    tab == CatalogTab.LATEST && native -> GetRemoteAnime.QUERY_LATEST
+                    else -> query
+                }
+                getRemoteAnime.subscribe(sourceId, remoteQuery, fresh)
+            }.flow.map { data ->
+                data.map { remote ->
+                    val local = catalogMutex.withLock { networkToLocalAnime.await(remote.toDomainAnime(sourceId)) }
+                    getAnime.subscribe(local.url, local.source).filterNotNull().stateIn(scope)
+                }.filter { !hideInLibraryItems || !it.value.favorite }
+            }.cachedIn(scope)
+        }
     }
 
     init {
@@ -128,7 +148,7 @@ class BrowseAnimeSourceScreenModel(
 
             it.copy(
                 listing = listing,
-                filters = source.getFilterList(),
+                filters = AnimeCatalogFilters.restore(source.getFilterList(), PersonalStore.text("catalog_filters:anime:$sourceId").get()),
                 toolbarQuery = query,
             )
         }
@@ -185,7 +205,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun setListing(listing: Listing) {
-        showOverview = false
+        catalogRevision++
         mutableState.update { it.copy(listing = listing, toolbarQuery = null) }
     }
 
@@ -198,7 +218,8 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun search(query: String? = null, filters: AnimeFilterList? = null) {
-        showOverview = false
+        catalogRevision++
+        if (filters != null) PersonalStore.text("catalog_filters:anime:$sourceId").set(AnimeCatalogFilters.snapshot(filters))
         val input = state.value.listing as? Listing.Search
             ?: Listing.Search(query = null, filters = source.getFilterList())
 
@@ -214,7 +235,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun searchGenre(genreName: String) {
-        showOverview = false
+        catalogRevision++
         val defaultFilters = source.getFilterList()
         var genreExists = false
 

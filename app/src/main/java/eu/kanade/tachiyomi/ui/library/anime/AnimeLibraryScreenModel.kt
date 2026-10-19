@@ -448,7 +448,7 @@ class AnimeLibraryScreenModel(
     }
 
     suspend fun getNextUnseenEpisode(anime: Anime): Episode? {
-        return getEpisodesByAnimeId.await(anime.id).getNextUnseen(anime, downloadManager)
+        return eu.kanade.tachiyomi.data.personal.ResumeResolver.anime(anime.id)
     }
 
     /**

@@ -44,6 +44,7 @@ fun RelatedMangaSection(
     state: RelatedMangaState,
     onRetry: () -> Unit,
     onChoose: (Int) -> Unit,
+    onReset: () -> Unit,
     onOpen: (RelatedManga) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -54,6 +55,7 @@ fun RelatedMangaSection(
         ) {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("연관 추천작", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = onReset) { Text("연결 변경") }
             IconButton(onClick = onRetry, enabled = state !is RelatedMangaState.Loading) {
                 Icon(Icons.Outlined.Refresh, contentDescription = "추천작 새로고침")
             }
@@ -82,7 +84,7 @@ fun RelatedMangaSection(
             }
             is RelatedMangaState.Ready -> {
                 Text(
-                    if (state.sameGenre) "비슷한 장르 · AniList" else "함께 읽을 작품 · AniList",
+                    state.originLabel ?: if (state.sameGenre) "비슷한 장르 · AniList" else "함께 읽을 작품 · AniList",
                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -101,7 +103,7 @@ private fun RelatedCovers(items: List<RelatedManga>, onClick: (RelatedManga) -> 
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(items, key = { it.id }) { item ->
+            items(items, key = { it.localId?.let { id -> "local:$id" } ?: "anilist:${it.id}" }) { item ->
                 Card(
                     onClick = { onClick(item) },
                     modifier = Modifier.width(coverWidth),

@@ -174,7 +174,7 @@ class ExternalIntents {
         val preserveWatchPos = playerPreferences.preserveWatchingPosition().get()
         val isEpisodeWatched = episode.lastSecondSeen == episode.totalSeconds
 
-        return if (episode.seen && (!preserveWatchPos || (preserveWatchPos && isEpisodeWatched))) {
+        return if (episode.seen && !eu.kanade.tachiyomi.data.personal.ResumePolicy.inProgress(episode.lastSecondSeen, episode.totalSeconds, episode.seen) && (!preserveWatchPos || (preserveWatchPos && isEpisodeWatched))) {
             1L
         } else {
             episode.lastSecondSeen

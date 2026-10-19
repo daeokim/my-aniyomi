@@ -44,6 +44,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.viewModels
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.boundsInWindow
@@ -235,6 +236,7 @@ class PlayerActivity : BaseActivity() {
         registerSecureActivity(this)
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        installFoldPostureLayout()
 
         setupPlayerMPV()
         setupPlayerAudio()
@@ -656,6 +658,30 @@ class PlayerActivity : BaseActivity() {
         super.onConfigurationChanged(newConfig)
     }
 
+    private fun installFoldPostureLayout() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                androidx.window.layout.WindowInfoTracker.getOrCreate(this@PlayerActivity)
+                    .windowLayoutInfo(this@PlayerActivity).collect { info ->
+                        val fold = info.displayFeatures.filterIsInstance<androidx.window.layout.FoldingFeature>()
+                            .firstOrNull { it.state == androidx.window.layout.FoldingFeature.State.HALF_OPENED && it.orientation == androidx.window.layout.FoldingFeature.Orientation.HORIZONTAL }
+                        binding.root.post {
+                            val rootHeight = binding.root.height
+                            val loc = IntArray(2); binding.root.getLocationInWindow(loc)
+                            val top = fold?.bounds?.top?.minus(loc[1]) ?: 0
+                            val bottom = fold?.bounds?.bottom?.minus(loc[1]) ?: 0
+                            val tabletop = !isInPictureInPictureMode && top > rootHeight / 5 && bottom < rootHeight * 4 / 5
+                            binding.player.layoutParams = binding.player.layoutParams.apply { height = if (tabletop) top else android.view.ViewGroup.LayoutParams.MATCH_PARENT }
+                            binding.controls.layoutParams = binding.controls.layoutParams.apply { height = if (tabletop) rootHeight - bottom else android.view.ViewGroup.LayoutParams.MATCH_PARENT }
+                            binding.controls.translationY = if (tabletop) bottom.toFloat() else 0f
+                        }
+                    }
+            }
+        }
+    }
+
+    fun recoverStream(error: String): Boolean = viewModel.recoverStream(error)
+
     fun showToast(message: String) {
         runOnUiThread { toast(message) }
     }
@@ -1073,7 +1099,7 @@ class PlayerActivity : BaseActivity() {
             viewModel.currentEpisode.value?.let { episode ->
                 val preservePos = playerPreferences.preserveWatchingPosition().get()
                 val resumePosition = position
-                    ?: if (episode.seen && !preservePos) {
+                    ?: if (episode.seen && !preservePos && !eu.kanade.tachiyomi.data.personal.ResumePolicy.inProgress(episode.last_second_seen, episode.total_seconds, episode.seen)) {
                         0L
                     } else {
                         episode.last_second_seen

@@ -37,6 +37,7 @@ fun BrowseAnimeSourceToolbar(
     onSettingsClick: () -> Unit,
     onSearch: (String) -> Unit,
     scrollBehavior: TopAppBarScrollBehavior? = null,
+    fixedCatalog: Boolean = false,
 ) {
     // Avoid capturing unstable source in actions lambda
     val title = source?.name
@@ -56,6 +57,7 @@ fun BrowseAnimeSourceToolbar(
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder()
                     .apply {
+                        if (!fixedCatalog) {
                         add(
                             AppBar.Action(
                                 title = stringResource(MR.strings.action_display_mode),
@@ -67,6 +69,7 @@ fun BrowseAnimeSourceToolbar(
                                 onClick = { selectingDisplayMode = true },
                             ),
                         )
+                        }
                         if (isLocalSource) {
                             add(
                                 AppBar.OverflowAction(

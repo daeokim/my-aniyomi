@@ -11,6 +11,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.i18n.aniyomi.AYMR
 
 enum class StartScreen(val titleRes: StringResource, val tab: Tab) {
+    DTOON(MR.strings.app_name, eu.kanade.tachiyomi.ui.home.personal.DtoonHomeTab),
     ANIME(AYMR.strings.label_anime, AnimeLibraryTab),
     MANGA(AYMR.strings.manga, MangaLibraryTab),
     UPDATES(MR.strings.label_recent_updates, UpdatesTab),

@@ -40,7 +40,8 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.core.util.ifMangaSourcesLoaded
-import eu.kanade.presentation.browse.AdaptiveSourceOverview
+import eu.kanade.presentation.browse.catalog.SourceCatalog
+import eu.kanade.presentation.browse.catalog.CatalogCoverCard
 import eu.kanade.presentation.browse.RemoveEntryDialog
 import eu.kanade.presentation.browse.manga.BrowseSourceContent
 import eu.kanade.presentation.browse.manga.MissingSourceScreen
@@ -154,142 +155,51 @@ data class BrowseMangaSourceScreen(
             }
         }
 
-        var topBarHeight by remember { mutableIntStateOf(0) }
         Scaffold(
             topBar = {
-                Column(
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surface)
-                        .onSizeChanged { topBarHeight = it.height },
-                ) {
-                    BrowseMangaSourceToolbar(
-                        searchQuery = state.toolbarQuery,
-                        onSearchQueryChange = screenModel::setToolbarQuery,
-                        source = screenModel.source,
-                        displayMode = screenModel.displayMode,
-                        onDisplayModeChange = { screenModel.displayMode = it },
-                        navigateUp = navigateUp,
-                        onWebViewClick = onWebViewClick,
-                        onHelpClick = onHelpClick,
-                        onSettingsClick = { navigator.push(MangaSourcePreferencesScreen(sourceId)) },
-                        onSearch = screenModel::search,
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = MaterialTheme.padding.small),
-                        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
-                    ) {
-                        FilterChip(
-                            selected = screenModel.showOverview,
-                            onClick = screenModel::openOverview,
-                            label = { Text("최신·인기") },
-                        )
-                        FilterChip(
-                            selected = !screenModel.showOverview && state.listing == Listing.Popular,
-                            onClick = {
-                                screenModel.resetFilters()
-                                screenModel.setListing(Listing.Popular)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Favorite,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(FilterChipDefaults.IconSize),
-                                )
-                            },
-                            label = {
-                                Text(text = stringResource(MR.strings.popular))
-                            },
-                        )
-                        if ((screenModel.source as CatalogueSource).supportsLatest) {
-                            FilterChip(
-                                selected = !screenModel.showOverview && state.listing == Listing.Latest,
-                                onClick = {
-                                    screenModel.resetFilters()
-                                    screenModel.setListing(Listing.Latest)
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.NewReleases,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(FilterChipDefaults.IconSize),
-                                    )
-                                },
-                                label = {
-                                    Text(text = stringResource(MR.strings.latest))
-                                },
-                            )
-                        }
-                        if (state.filters.isNotEmpty()) {
-                            FilterChip(
-                                selected = !screenModel.showOverview && state.listing is Listing.Search,
-                                onClick = screenModel::openFilterSheet,
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.FilterList,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .size(FilterChipDefaults.IconSize),
-                                    )
-                                },
-                                label = {
-                                    Text(text = stringResource(MR.strings.action_filter))
-                                },
-                            )
-                        }
-                    }
-
-                    HorizontalDivider()
-                }
+                BrowseMangaSourceToolbar(
+                    searchQuery = state.toolbarQuery,
+                    onSearchQueryChange = screenModel::setToolbarQuery,
+                    source = screenModel.source,
+                    displayMode = screenModel.displayMode,
+                    onDisplayModeChange = { screenModel.displayMode = it },
+                    navigateUp = navigateUp,
+                    onWebViewClick = onWebViewClick,
+                    onHelpClick = onHelpClick,
+                    onSettingsClick = { navigator.push(MangaSourcePreferencesScreen(sourceId)) },
+                    onSearch = screenModel::search,
+                    fixedCatalog = true,
+                )
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         ) { paddingValues ->
-            if (screenModel.showOverview) {
-                AdaptiveSourceOverview(
-                    latest = if ((screenModel.source as CatalogueSource).supportsLatest) {
-                        screenModel.overviewLatest.collectOverviewItems()
-                    } else {
-                        null
-                    },
-                    popular = screenModel.overviewPopular.collectOverviewItems(),
-                    contentPadding = paddingValues,
-                    onOpenLatest = { screenModel.setListing(Listing.Latest) },
-                    onOpenPopular = { screenModel.setListing(Listing.Popular) },
-                ) { manga ->
-                    EntryCompactGridItem(
-                        title = manga.title,
-                        coverData = MangaCover(
-                            mangaId = manga.id,
-                            sourceId = manga.source,
-                            isMangaFavorite = manga.favorite,
-                            url = manga.thumbnailUrl,
-                            lastModified = manga.coverLastModified,
-                        ),
-                        onClick = { onMangaClick(manga) },
-                        onLongClick = { onMangaLongClick(manga) },
-                    )
-                }
-            } else {
-                BrowseSourceContent(
-                    source = screenModel.source,
-                    mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems(),
-                    columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
-                    entries = screenModel.getColumnsPreferenceForCurrentOrientation(
-                        LocalConfiguration.current.orientation,
+            SourceCatalog(
+                sourceKey = "manga:$sourceId",
+                contentPadding = paddingValues,
+                initialTab = screenModel.catalogTab,
+                initialDay = screenModel.catalogDay,
+                revision = screenModel.catalogRevision,
+                filterKey = screenModel.catalogSignature,
+                capability = screenModel.catalogCapability,
+                onTab = screenModel::selectCatalogTab,
+                onDay = screenModel::selectCatalogDay,
+                onFilter = screenModel::openFilterSheet,
+                onWeb = onWebViewClick,
+                itemsFor = screenModel::catalogItems,
+                entryKey = { it.id.toString() },
+            ) { entry ->
+                CatalogCoverCard(
+                    title = entry.title,
+                    cover = MangaCover(
+                        mangaId = entry.id,
+                        sourceId = entry.source,
+                        isMangaFavorite = entry.favorite,
+                        url = entry.thumbnailUrl,
+                        lastModified = entry.coverLastModified,
                     ),
-                    topBarHeight = topBarHeight,
-                    displayMode = screenModel.displayMode,
-                    snackbarHostState = snackbarHostState,
-                    contentPadding = paddingValues,
-                    onWebViewClick = onWebViewClick,
-                    onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
-                    onLocalSourceHelpClick = onHelpClick,
-                    onMangaClick = onMangaClick,
-                    onMangaLongClick = onMangaLongClick,
+                    metadata = listOfNotNull(entry.author?.takeIf { it.isNotBlank() }, entry.artist?.takeIf { it.isNotBlank() && it != entry.author }).joinToString(" · "),
+                    onClick = { onMangaClick(entry) },
+                    onLongClick = { onMangaLongClick(entry) },
                 )
             }
         }

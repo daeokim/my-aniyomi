@@ -85,3 +85,14 @@ limitations under the License.
 </pre>
 
 </div>
+
+
+## Dtoon Fold patch 4
+
+- Replaces the mixed source overview with Popular / Latest / Weekday / Completed swipe tabs and vertical adaptive 3:4 grids for manga and video. Unsupported source capabilities are explicitly shown. Filtered paging and saved anchors are independent per tab/day/filter.
+- Adds a unified landing home with recent manga/video progress, media categories, installed-source entry points and library titles. Long-press to explicitly link the same work across sources, then map episodes and merge completion/bookmark flags. Page offsets, playback timestamps and histories are not copied across sources.
+- Continue actions prioritize actual most-recent history and unfinished playback positions in milliseconds. Recommendation seed choices persist; local library recommendations are used when AniList returns no match, and existing library matches open directly.
+- Adds source-stage diagnostics, Naver restricted-episode labels/official-web guidance, reader image errors, bounded stream URL refresh and horizontal half-fold player controls layout.
+- Retains the DO icon, original application ID and personal update signing identity. Version code 13204.
+
+Validation: independent fold-policy and integration tests; release compilation and JVM policy/recommendation tests in private Actions. Fold posture, real media sources, quality changes, subtitles and expired CDN URLs still require device validation. Source availability and login/payment restrictions depend on each extension and service.

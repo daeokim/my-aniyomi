@@ -109,7 +109,7 @@ class AnimeHistoryScreenModel(
 
     fun getNextEpisodeForAnime(animeId: Long, episodeId: Long) {
         screenModelScope.launchIO {
-            sendNextEpisodeEvent(getNextEpisodes.await(animeId, episodeId, onlyUnseen = false))
+            _events.send(Event.OpenEpisode(eu.kanade.tachiyomi.data.personal.ResumeResolver.anime(animeId)))
         }
     }
 

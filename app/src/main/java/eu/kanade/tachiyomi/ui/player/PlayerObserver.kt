@@ -42,7 +42,8 @@ class PlayerObserver(val activity: PlayerActivity) :
         }
         logcat(LogPriority.ERROR) { errorMessage }
         activity.runOnUiThread {
-            activity.toast(errorMessage, Toast.LENGTH_LONG)
+            if (activity.recoverStream(errorMessage)) activity.toast("재생 주소를 갱신하고 보던 위치를 복원합니다.", Toast.LENGTH_LONG)
+            else activity.toast(eu.kanade.tachiyomi.data.personal.SourceHealth.message("재생", java.io.IOException(errorMessage)), Toast.LENGTH_LONG)
         }
     }
 

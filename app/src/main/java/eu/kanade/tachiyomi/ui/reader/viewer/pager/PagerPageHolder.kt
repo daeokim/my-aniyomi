@@ -294,6 +294,7 @@ class PagerPageHolder(
             }
         }
 
+        errorLayout?.errorMessage?.text = page.loadError ?: "이미지를 불러오지 못했습니다."
         val imageUrl = page.imageUrl
         errorLayout?.actionOpenInWebView?.isVisible = imageUrl != null
         if (imageUrl != null) {

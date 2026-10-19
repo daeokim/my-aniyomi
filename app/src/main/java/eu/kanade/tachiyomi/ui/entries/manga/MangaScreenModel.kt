@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.entries.manga
 
+import eu.kanade.tachiyomi.data.personal.ResumeResolver
+import eu.kanade.tachiyomi.data.personal.PersonalStore
 import android.content.Context
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
@@ -261,8 +263,19 @@ class MangaScreenModel(
         }
     }
 
+    private fun recommendationPreference() = successState?.manga?.let {
+        PersonalStore.number("recommendation:" + PersonalStore.key("${it.source}:${it.url}"))
+    }
+    private fun savedRecommendationSeed() = recommendationPreference()?.get()?.takeIf { it > 0 }
+    fun resetRecommendationSeed() {
+        recommendationPreference()?.delete()
+        recommendationSeed = trackedRecommendationSeed
+        loadRelatedManga(forceRefresh = true)
+    }
+
     private var relatedJob: Job? = null
     private var recommendationSeed: Int? = null
+    private var trackedRecommendationSeed: Int? = null
 
     private fun observeRecommendations() {
         screenModelScope.launchIO {
@@ -271,7 +284,8 @@ class MangaScreenModel(
                 .distinctUntilChanged()
                 .catch { updateSuccessState { it.copy(relatedManga = RelatedMangaState.Error) } }
                 .collectLatest { id ->
-                    recommendationSeed = id
+                    trackedRecommendationSeed = id
+                    recommendationSeed = savedRecommendationSeed() ?: id
                     loadRelatedManga(forceRefresh = false)
                 }
         }
@@ -279,6 +293,7 @@ class MangaScreenModel(
 
     fun chooseRecommendationSeed(id: Int) {
         recommendationSeed = id
+        recommendationPreference()?.set(id)
         loadRelatedManga(forceRefresh = false)
     }
 
@@ -296,8 +311,30 @@ class MangaScreenModel(
             } catch (e: Exception) {
                 RelatedMangaState.Error
             }
-            updateSuccessState { it.copy(relatedManga = result) }
+            val withLocal = if (result == RelatedMangaState.Empty) localRecommendations() ?: result else result
+            updateSuccessState { it.copy(relatedManga = withLocal) }
         }
+    }
+
+    suspend fun relatedLibraryMatches(item: eu.kanade.tachiyomi.data.recommendations.RelatedManga): List<Manga> {
+        val names = (item.aliases + item.title).map { RelatedMangaRepository.normalizeTitle(it) }.toSet()
+        return Injekt.get<tachiyomi.domain.entries.manga.interactor.GetLibraryManga>().await()
+            .map { it.manga }.filter { RelatedMangaRepository.normalizeTitle(it.title) in names }
+            .sortedByDescending { it.source == successState?.manga?.source }
+    }
+
+    private suspend fun localRecommendations(): RelatedMangaState.Ready? {
+        val seed = successState?.manga ?: return null
+        val creators = listOfNotNull(seed.author, seed.artist).filter { it.isNotBlank() }.toSet()
+        val genres = seed.genre.orEmpty().toSet()
+        val candidates = Injekt.get<tachiyomi.domain.entries.manga.interactor.GetLibraryManga>().await().map { it.manga }
+            .filter { it.id != seed.id }
+            .map { manga ->
+                val authorScore = if (listOfNotNull(manga.author, manga.artist).any { it in creators }) 10 else 0
+                manga to (authorScore + manga.genre.orEmpty().count { it in genres })
+            }.filter { it.second > 0 }.sortedByDescending { it.second }.take(12)
+            .map { (manga, _) -> eu.kanade.tachiyomi.data.recommendations.RelatedManga(0, manga.title, manga.thumbnailUrl, listOf(manga.title), manga.id) }
+        return candidates.takeIf { it.isNotEmpty() }?.let { RelatedMangaState.Ready(it, true, "보관함 · 같은 작가/장르") }
     }
 
     fun fetchAllFromSource(manualFetch: Boolean = true) {
@@ -616,6 +653,7 @@ class MangaScreenModel(
         try {
             withIOContext {
                 val chapters = state.source.getChapterList(state.manga.toSManga())
+                eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${state.source.id}", "회차", null)
 
                 val newChapters = syncChaptersWithSource.await(
                     chapters,
@@ -629,6 +667,8 @@ class MangaScreenModel(
                 }
             }
         } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${state.source.id}", "회차", e)
             val message = if (e is NoChaptersException) {
                 context.stringResource(MR.strings.no_chapters_error)
             } else {
@@ -690,10 +730,7 @@ class MangaScreenModel(
     /**
      * Returns the next unread chapter or null if everything is read.
      */
-    fun getNextUnreadChapter(): Chapter? {
-        val successState = successState ?: return null
-        return successState.chapters.getNextUnread(successState.manga)
-    }
+    suspend fun getNextUnreadChapter(): Chapter? = ResumeResolver.manga(mangaId)
 
     private fun getUnreadChapters(): List<Chapter> {
         val chapterItems = if (skipFiltered) filteredChapters.orEmpty() else allChapters.orEmpty()

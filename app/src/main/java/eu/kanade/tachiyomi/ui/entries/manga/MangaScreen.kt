@@ -115,6 +115,31 @@ class MangaScreen(
             }
         }
 
+        var relatedSearch by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<eu.kanade.tachiyomi.data.recommendations.RelatedManga?>(null) }
+        relatedSearch?.let { item ->
+            androidx.compose.material3.AlertDialog(onDismissRequest = { relatedSearch = null },
+                title = { androidx.compose.material3.Text("검색할 제목 선택") },
+                text = { androidx.compose.foundation.lazy.LazyColumn {
+                    val aliases = (listOf(item.title) + item.aliases).distinct().take(12)
+                    items(aliases.size) { i -> androidx.compose.material3.TextButton(onClick = {
+                        relatedSearch = null
+                        navigator.push(GlobalMangaSearchScreen(aliases[i]))
+                    }) { androidx.compose.material3.Text(aliases[i]) } }
+                } }, confirmButton = { androidx.compose.material3.TextButton(onClick = { relatedSearch = null }) { androidx.compose.material3.Text("닫기") } })
+        }
+
+        var restrictedChapter by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Chapter?>(null) }
+        restrictedChapter?.let { chapter ->
+            androidx.compose.material3.AlertDialog(onDismissRequest = { restrictedChapter = null },
+                title = { androidx.compose.material3.Text("제한 회차") },
+                text = { androidx.compose.material3.Text("로그인·연령 확인 또는 구매가 필요한 회차일 수 있습니다. 정확한 조건은 네이버 공식 웹에서 확인해 주세요.") },
+                confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                    restrictedChapter = null
+                    navigator.push(WebViewScreen(url = "https://comic.naver.com${chapter.url}", initialTitle = chapter.name, sourceId = successState.source.id))
+                }) { androidx.compose.material3.Text("공식 웹에서 확인") } },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { restrictedChapter = null }) { androidx.compose.material3.Text("닫기") } })
+        }
+
         MangaScreen(
             state = successState,
             snackbarHostState = screenModel.snackbarHostState,
@@ -123,7 +148,9 @@ class MangaScreen(
             chapterSwipeStartAction = screenModel.chapterSwipeStartAction,
             chapterSwipeEndAction = screenModel.chapterSwipeEndAction,
             navigateUp = navigator::pop,
-            onChapterClicked = { openChapter(context, it) },
+            onChapterClicked = {
+                if (eu.kanade.tachiyomi.data.personal.ChapterAccess.restricted(successState.manga.source, it.name)) restrictedChapter = it else openChapter(context, it)
+            },
             onDownloadChapter = screenModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
             onAddToLibraryClicked = {
                 screenModel.toggleFavorite()
@@ -153,7 +180,10 @@ class MangaScreen(
             onTagSearch = { scope.launch { performGenreSearch(navigator, it, screenModel.source!!) } },
             onFilterButtonClicked = screenModel::showSettingsDialog,
             onRefresh = screenModel::fetchAllFromSource,
-            onContinueReading = { continueReading(context, screenModel.getNextUnreadChapter()) },
+            onContinueReading = { scope.launch {
+                val chapter = screenModel.getNextUnreadChapter()
+                if (chapter != null && eu.kanade.tachiyomi.data.personal.ChapterAccess.restricted(successState.manga.source, chapter.name)) restrictedChapter = chapter else continueReading(context, chapter)
+            } },
             onSearch = { query, global -> scope.launch { performSearch(navigator, query, global) } },
             onCoverClicked = screenModel::showCoverDialog,
             onShareClicked = { shareManga(context, screenModel.manga, screenModel.source) }.takeIf { isHttpSource },
@@ -178,7 +208,14 @@ class MangaScreen(
                     state = successState.relatedManga,
                     onRetry = screenModel::retryRelatedManga,
                     onChoose = screenModel::chooseRecommendationSeed,
-                    onOpen = { navigator.push(GlobalMangaSearchScreen(it.title)) },
+                    onReset = screenModel::resetRecommendationSeed,
+                    onOpen = { item -> scope.launch {
+                        if (item.localId != null) navigator.push(MangaScreen(item.localId))
+                        else {
+                            val local = screenModel.relatedLibraryMatches(item)
+                            if (local.size == 1) navigator.push(MangaScreen(local.single().id)) else relatedSearch = item
+                        }
+                    } },
                 )
             },
         )

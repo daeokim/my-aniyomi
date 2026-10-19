@@ -109,7 +109,7 @@ class MangaHistoryScreenModel(
 
     fun getNextChapterForManga(mangaId: Long, chapterId: Long) {
         screenModelScope.launchIO {
-            sendNextChapterEvent(getNextChapters.await(mangaId, chapterId, onlyUnread = false))
+            _events.send(Event.OpenChapter(eu.kanade.tachiyomi.data.personal.ResumeResolver.manga(mangaId)))
         }
     }
 

@@ -26,8 +26,8 @@ android {
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 13203
-        versionName = "0.18.2.1-dtoon-fold8.3"
+        versionCode = 13204
+        versionName = "0.18.2.1-dtoon-fold8.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
@@ -200,6 +200,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.window:window:1.3.0")
     implementation(projects.i18n)
     implementation(projects.i18nAniyomi)
     implementation(projects.core.archive)

@@ -16,4 +16,5 @@ open class ReaderPage(
 
     /** Personal fork: discovered from image dimensions, only kept for this loaded chapter. */
     var isWidePage = false
+    var loadError: String? = null
 }

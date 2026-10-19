@@ -33,16 +33,12 @@ class IntegrationContracts(unittest.TestCase):
             folder = JAVA / f'tachiyomi/ui/browse/{kind}/source/browse'
             model = (folder / f'Browse{cap}SourceScreenModel.kt').read_text()
             ui = (folder / f'Browse{cap}SourceScreen.kt').read_text()
-            self.assertIn(f'overviewPager(GetRemote{cap}.QUERY_POPULAR)', model)
-            self.assertIn(f'overviewPager(GetRemote{cap}.QUERY_LATEST)', model)
-            self.assertIn('.cachedIn(screenModelScope)', model)
-            self.assertIn('overviewMutex.withLock', model)
-            self.assertIn('AdaptiveSourceOverview(', ui)
-            self.assertIn('overviewLatest.collectOverviewItems()', ui)
-            self.assertIn('overviewPopular.collectOverviewItems()', ui)
-            self.assertIn('supportsLatest)', ui)
-            for action in ['setListing', 'search', 'searchGenre']:
-                self.assertRegex(model, rf'fun {action}\([^{{]*\) \{{\s*showOverview = false')
+            self.assertIn(f'GetRemote{cap}.QUERY_POPULAR', model)
+            self.assertIn(f'GetRemote{cap}.QUERY_LATEST', model)
+            self.assertIn('catalogMutex.withLock', model)
+            self.assertIn('SourceCatalog(', ui)
+            self.assertNotIn('AdaptiveSourceOverview', ui)
+            self.assertIn('itemsFor = screenModel::catalogItems', ui)
 
     def test_fold_transition_preserves_anchor_and_image_loading(self):
         viewer = (JAVA / 'tachiyomi/ui/reader/viewer/pager/PagerViewer.kt').read_text()
@@ -56,17 +52,16 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('PagerPageHolder(context, viewer, page)', holder)
         self.assertIn('getPageHolder(spread.second)?.imageLoaded == true', viewer)
 
-    def test_overview_reflows_and_errors_are_per_feed(self):
-        ui = (JAVA / 'presentation/browse/AdaptiveSourceOverview.kt').read_text()
-        self.assertIn('BoxWithConstraints', ui)
-        self.assertIn('FoldLayoutPolicy.useSpread(', ui)
-        self.assertIn('horizontalArrangement = Arrangement.spacedBy(12.dp)', ui)
-        self.assertIn('verticalArrangement = Arrangement.spacedBy(4.dp)', ui)
-        self.assertIn('pagingItems::retry', ui)
-        self.assertIn('pagingItems::refresh', ui)
-        self.assertIn('val latestScroll = rememberLazyGridState()', ui)
-        self.assertIn('val popularScroll = rememberLazyGridState()', ui)
-        self.assertIn('state = scrollState', ui)
+    def test_shared_catalog_reflows_and_keeps_independent_query_state(self):
+        ui = (JAVA / 'presentation/browse/catalog/SourceCatalog.kt').read_text()
+        self.assertIn('HorizontalPager', ui)
+        self.assertIn('GridCells.Adaptive', ui)
+        self.assertIn('holder.SaveableStateProvider(queryKey)', ui)
+        self.assertIn('items::retry', ui)
+        self.assertIn('items::refresh', ui)
+        self.assertIn('grid_anchor:', ui)
+        self.assertNotIn('LazyRow', ui)
+        self.assertFalse((JAVA / 'presentation/browse/AdaptiveSourceOverview.kt').exists())
 
 
 if __name__ == '__main__':

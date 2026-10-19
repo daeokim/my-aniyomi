@@ -75,7 +75,14 @@ object HomeScreen : Screen() {
     private const val TAB_NAVIGATOR_KEY = "HomeTabs"
 
     private val uiPreferences: UiPreferences by injectLazy()
-    private val defaultTab = uiPreferences.startScreen().get().tab
+    private val defaultTab by lazy {
+        val migration = eu.kanade.tachiyomi.data.personal.PersonalStore.number("home_patch4")
+        if (migration.get() == 0) {
+            uiPreferences.startScreen().set(eu.kanade.domain.ui.model.StartScreen.DTOON)
+            migration.set(1)
+        }
+        uiPreferences.startScreen().get().tab
+    }
     private val moreTab = uiPreferences.navStyle().get().moreTab
 
     @Composable

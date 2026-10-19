@@ -415,6 +415,56 @@ class PlayerViewModel @JvmOverloads constructor(
         MPVLib.getPropertyString("track-list/$it/type")
     }
 
+    private var savedAudioSelection: VideoTrack? = null
+    private var savedSubtitleSelection: VideoTrack? = null
+    private var savedSubtitleOff: Boolean? = null
+    private var reconnecting = false
+    private var recoveryEpisodeId = -1L
+    private var recoveryAttempts = 0
+    private var recoveryResolution: Int? = null
+    private fun captureTrackSelection() {
+        savedAudioSelection = audioTracks.value.firstOrNull { it.id == activity.player.aid }
+        savedSubtitleSelection = subtitleTracks.value.firstOrNull { it.id == activity.player.sid }
+        savedSubtitleOff = activity.player.sid == -1
+    }
+
+    /** Re-extract the current episode, rather than repeatedly loading an expired CDN URL. */
+    fun recoverStream(message: String): Boolean {
+        val episode = currentEpisode.value ?: return false
+        val anime = currentAnime.value ?: return false
+        val source = currentSource.value ?: return false
+        if (EpisodeLoader.isDownload(episode.toDomainEpisode() ?: return false, anime)) return false
+        if (recoveryEpisodeId != episode.id) { recoveryEpisodeId = episode.id ?: -1L; recoveryAttempts = 0 }
+        if (reconnecting || recoveryAttempts >= 2) return false
+        val transient = listOf("http", "connection", "network", "timeout", "timed out", "failed", "error", "unable").any { message.contains(it, true) }
+        if (!transient) return false
+        recoveryAttempts++
+        reconnecting = true
+        recoveryResolution = currentVideo.value?.resolution
+        captureTrackSelection()
+        _pausedState.value = paused.value
+        val positionMs = activity.player.timePos?.toDouble()?.times(1000)?.toLong()
+        if (positionMs != null && positionMs >= 0) episode.last_second_seen = positionMs
+        saveCurrentEpisodeWatchingProgress()
+        eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${source.id}", "재생", java.io.IOException(message))
+        viewModelScope.launchIO {
+            try {
+                delay(1000L * recoveryAttempts)
+                val fresh = EpisodeLoader.getHosters(episode.toDomainEpisode() ?: error("Episode unavailable"), anime, source)
+                if (fresh.isEmpty()) throw java.io.IOException("No playback links")
+                _selectedHosterVideoIndex.value = -1 to -1
+                _currentVideo.value = null
+                loadHosters(source, fresh, -1, -1)
+            } catch (e: CancellationException) { reconnecting = false; throw e }
+            catch (e: Exception) {
+                reconnecting = false
+                eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${source.id}", "재생", e)
+                withUIContext { activity.showToast("재생 주소를 다시 받지 못했습니다. 소스에서 회차를 다시 열어 주세요.") }
+            }
+        }
+        return true
+    }
+
     private var trackLoadingJob: Job? = null
     fun loadTracks() {
         trackLoadingJob?.cancel()
@@ -464,6 +514,21 @@ class PlayerViewModel @JvmOverloads constructor(
             activity.player.aid = it.id
         }
 
+        savedAudioSelection?.let { want ->
+            audioTracks.value.firstOrNull { want.language?.isNotBlank() == true && it.language == want.language }
+                ?.let { activity.player.aid = it.id }
+        }
+        if (savedSubtitleOff == true) activity.player.sid = -1
+        else savedSubtitleSelection?.let { want ->
+            (subtitleTracks.value.firstOrNull { want.language?.isNotBlank() == true && it.language == want.language }
+                ?: subtitleTracks.value.firstOrNull { it.name == want.name })?.let { activity.player.sid = it.id }
+        }
+        savedAudioSelection = null
+        savedSubtitleSelection = null
+        savedSubtitleOff = null
+        reconnecting = false
+        recoveryResolution = null
+        currentSource.value?.let { eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${it.id}", "재생", null) }
         isLoadingTracks.update { _ -> true }
         updateIsLoadingEpisode(false)
         setPausedState()
@@ -1409,7 +1474,8 @@ class PlayerViewModel @JvmOverloads constructor(
                                     }
                                 }
 
-                                val prefIndex = hosterState.videoList.indexOfFirst { it.preferred }
+                                val prefIndex = hosterState.videoList.indexOfFirst { recoveryResolution != null && it.resolution == recoveryResolution }.takeIf { it >= 0 }
+                                    ?: hosterState.videoList.indexOfFirst { it.preferred }
                                 if (prefIndex != -1 && hosterIndex == -1) {
                                     if (hasFoundPreferredVideo.compareAndSet(false, true)) {
                                         if (selectedHosterVideoIndex.value == Pair(-1, -1)) {
@@ -1451,13 +1517,24 @@ class PlayerViewModel @JvmOverloads constructor(
                     hosterList.map { HosterState.Idle(it.hosterName) }
                 }
 
+                reconnecting = false
                 throw e
+            } catch (e: Exception) {
+                reconnecting = false
+                source?.let { eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${it.id}", "재생", e) }
+                withUIContext { activity.showToast("재생 주소를 불러오지 못했습니다. 회차를 다시 열어 주세요.") }
             }
         }
     }
 
     private suspend fun loadVideo(source: AnimeSource?, video: Video, hosterIndex: Int, videoIndex: Int): Boolean {
         val selectedHosterState = (_hosterState.value[hosterIndex] as? HosterState.Ready) ?: return false
+        if (currentVideo.value != null && !reconnecting) {
+            captureTrackSelection()
+            _pausedState.value = paused.value
+            val positionMs = activity.player.timePos?.toDouble()?.times(1000)?.toLong()
+            if (positionMs != null && positionMs >= 0) currentEpisode.value?.last_second_seen = positionMs
+        }
         updateIsLoadingEpisode(true)
 
         val oldSelectedIndex = _selectedHosterVideoIndex.value
