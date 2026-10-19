@@ -52,6 +52,7 @@ class RelatedMangaRepositoryTest {
         val repo = RelatedMangaRepository { query, variables ->
             calls.add(query)
             if (query.contains("DtoonMatch")) {
+                assertEquals("나 혼자만 레벨업!", variables["search"]!!.jsonPrimitive.content)
                 """{"data":{"Page":{"media":[{"id":42,"type":"MANGA","title":{"english":"Solo Leveling"},"synonyms":["나 혼자만 레벨업"]}]}}}"""
             } else {
                 assertEquals(42, variables["id"]!!.jsonPrimitive.int)

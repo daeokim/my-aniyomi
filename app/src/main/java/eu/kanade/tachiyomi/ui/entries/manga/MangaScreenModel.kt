@@ -269,6 +269,7 @@ class MangaScreenModel(
             getTracks.subscribe(mangaId)
                 .map { tracks -> tracks.firstOrNull { it.trackerId == TrackerManager.ANILIST }?.remoteId?.toInt()?.takeIf { it > 0 } }
                 .distinctUntilChanged()
+                .catch { updateSuccessState { it.copy(relatedManga = RelatedMangaState.Error) } }
                 .collectLatest { id ->
                     recommendationSeed = id
                     loadRelatedManga(forceRefresh = false)
