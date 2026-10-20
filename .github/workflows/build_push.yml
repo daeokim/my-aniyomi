@@ -31,7 +31,7 @@ jobs:
         continue-on-error: true
         run: python3 tools/check-related-api.py
       - name: Compile app and run Android JVM tests
-        run: bash gradlew :app:assembleRelease :app:testReleaseUnitTest -Pdisable-code-shrink --no-daemon
+        run: bash gradlew :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
       - name: Prepare offline signing tools
         run: |
           mkdir -p personal/output/signing-tools

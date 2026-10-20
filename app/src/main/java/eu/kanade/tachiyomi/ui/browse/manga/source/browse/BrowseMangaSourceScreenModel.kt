@@ -438,12 +438,18 @@ class BrowseMangaSourceScreenModel(
 
         fun withToolbarQuery(query: String?): State {
             // Clearing or closing search must also clear the submitted catalog query.
-            val nextListing = if (query.isNullOrEmpty() && listing is Listing.Search) {
+            val nextListing = if (query.isNullOrEmpty() && listing is Listing.Search && listing.query != null) {
                 listing.copy(query = null)
             } else {
                 listing
             }
-            return copy(listing = nextListing, toolbarQuery = query)
+            // FilterList deliberately disables structural equality. Keep repeated UI events
+            // idempotent instead of emitting a new state and rebuilding an unchanged listing.
+            return if (nextListing === listing && toolbarQuery == query) {
+                this
+            } else {
+                copy(listing = nextListing, toolbarQuery = query)
+            }
         }
     }
 }

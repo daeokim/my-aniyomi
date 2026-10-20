@@ -55,7 +55,7 @@ class BrowseMangaSearchStateTest {
     fun `closing search twice does not bring the old query back`() {
         val state = State(Listing.Search("검색어", FilterList()), toolbarQuery = "검색어")
         val cleared = state.withToolbarQuery(null)
-        assertEquals(cleared, cleared.withToolbarQuery(null))
+        assertSame(cleared, cleared.withToolbarQuery(null))
     }
     @Test
     fun `editing and resetting draft filters preserves applied catalog snapshot`() {

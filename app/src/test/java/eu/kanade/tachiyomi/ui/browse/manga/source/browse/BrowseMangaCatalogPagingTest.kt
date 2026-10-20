@@ -7,12 +7,12 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListUpdateCallback
-import cafe.adriel.voyager.core.model.screenModelScope
+import cafe.adriel.voyager.core.annotation.InternalVoyagerApi
+import cafe.adriel.voyager.core.model.ScreenModelStore
 import eu.kanade.domain.source.manga.interactor.GetMangaIncognitoState
 import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.domain.ui.UiPreferences
 import eu.kanade.presentation.browse.catalog.CatalogTab
-import eu.kanade.presentation.util.ioCoroutineScope
 import eu.kanade.tachiyomi.data.personal.PersonalStore
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -28,7 +28,6 @@ import io.mockk.unmockkStatic
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -59,9 +58,10 @@ import tachiyomi.domain.source.manga.repository.MangaSourceRepository
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.addSingleton
+import java.util.UUID
 
 /** Exercises the production model's Pager/cache scopes, with a local source and no HTTP/DB. */
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, InternalVoyagerApi::class)
 class BrowseMangaCatalogPagingTest {
     companion object {
         @JvmStatic
@@ -73,7 +73,7 @@ class BrowseMangaCatalogPagingTest {
     }
 
     private val dispatcher = StandardTestDispatcher()
-    private val models = mutableListOf<BrowseMangaSourceScreenModel>()
+    private val modelKeys = mutableMapOf<BrowseMangaSourceScreenModel, String>()
     private val slowStarted = CompletableDeferred<Unit>()
     private val slowCancelled = CompletableDeferred<Unit>()
 
@@ -89,10 +89,7 @@ class BrowseMangaCatalogPagingTest {
 
     @AfterEach
     fun tearDown() {
-        models.forEach {
-            it.screenModelScope.cancel()
-            it.ioCoroutineScope.cancel()
-        }
+        modelKeys.values.forEach(ScreenModelStore::onDisposeNavigator)
         unmockkObject(PersonalStore)
         unmockkStatic(Log::class)
         Dispatchers.resetMain()
@@ -158,7 +155,10 @@ class BrowseMangaCatalogPagingTest {
             coEvery { await(any()) } answers { firstArg<Manga>().copy(id = 1L) }
         }
         val incognito = mockk<GetMangaIncognitoState> { every { await(1L) } returns true }
-        return BrowseMangaSourceScreenModel(
+        // Register each fixture as a separate screen. Standalone models otherwise share
+        // Voyager dependency scopes, so disposing one would cancel later test fixtures.
+        val holderKey = "dtoon-paging-test:${UUID.randomUUID()}"
+        return ScreenModelStore.getOrPut(holderKey, null) { BrowseMangaSourceScreenModel(
             sourceId = 1L,
             listingQuery = null,
             sourceManager = manager,
@@ -175,7 +175,7 @@ class BrowseMangaCatalogPagingTest {
             updateManga = mockk(),
             addTracks = mockk(),
             getIncognitoState = incognito,
-        ).also(models::add)
+        ) }.also { modelKeys[it] = holderKey }
     }
 
     private fun TestScope.collect(flow: Flow<PagingData<StateFlow<Manga>>>): AsyncPagingDataDiffer<StateFlow<Manga>> {
@@ -218,8 +218,7 @@ class BrowseMangaCatalogPagingTest {
                     assertEquals(tab.ordinal, model.catalogTab)
                     assertEquals(3, model.catalogDay)
                     assertSame(restored, model.catalogItems(tab, 3))
-                    model.screenModelScope.cancel()
-                    model.ioCoroutineScope.cancel()
+                    ScreenModelStore.onDisposeNavigator(modelKeys.getValue(model))
                 }
             }
         }
