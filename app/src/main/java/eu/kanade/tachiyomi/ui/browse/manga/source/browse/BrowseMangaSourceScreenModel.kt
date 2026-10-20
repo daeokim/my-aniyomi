@@ -95,7 +95,7 @@ class BrowseMangaSourceScreenModel(
         private set
     var catalogDay by mutableStateOf(PersonalStore.number("catalog_day:manga:$sourceId", CatalogPolicy.today()).get())
         private set
-    val catalogSignature get() = PersonalStore.key(MangaCatalogFilters.snapshot(state.value.filters) + (state.value.listing as? Listing.Search)?.query.orEmpty())
+    val catalogSignature get() = PersonalStore.key(state.value.catalogFiltersSnapshot + (state.value.listing as? Listing.Search)?.query.orEmpty())
     private var catalogScope = kotlinx.coroutines.CoroutineScope(screenModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(screenModelScope.coroutineContext[kotlinx.coroutines.Job]))
     private var catalogContext: Pair<String, String>? = null
     private val catalogFlows = linkedMapOf<CatalogRequest, Flow<PagingData<StateFlow<Manga>>>>()
@@ -104,7 +104,7 @@ class BrowseMangaSourceScreenModel(
     fun selectCatalogDay(day: Int) { catalogDay = day; PersonalStore.number("catalog_day:manga:$sourceId").set(day) }
     fun catalogItems(tab: CatalogTab, day: Int): Flow<PagingData<StateFlow<Manga>>> {
         val query = (state.value.listing as? Listing.Search)?.query.orEmpty()
-        val snapshot = MangaCatalogFilters.snapshot(state.value.filters)
+        val snapshot = state.value.catalogFiltersSnapshot
         val request = CatalogRequest(tab, if (tab == CatalogTab.WEEKDAY) day else 0, snapshot, query)
         val context = snapshot to query
         if (catalogContext != context) {
@@ -145,9 +145,14 @@ class BrowseMangaSourceScreenModel(
                     listing = Listing.Search(query, source.getFilterList())
                 }
 
+                val restoredFilters = MangaCatalogFilters.restore(
+                    source.getFilterList(),
+                    PersonalStore.text("catalog_filters:manga:$sourceId").get(),
+                )
                 it.copy(
                     listing = listing,
-                    filters = MangaCatalogFilters.restore(source.getFilterList(), PersonalStore.text("catalog_filters:manga:$sourceId").get()),
+                    filters = restoredFilters,
+                    catalogFiltersSnapshot = MangaCatalogFilters.snapshot(restoredFilters),
                     toolbarQuery = query,
                 )
             }
@@ -236,6 +241,7 @@ class BrowseMangaSourceScreenModel(
                     filters = filters ?: input.filters,
                 ),
                 toolbarQuery = query ?: input.query,
+                catalogFiltersSnapshot = filters?.let(MangaCatalogFilters::snapshot) ?: it.catalogFiltersSnapshot,
             )
         }
     }
@@ -280,6 +286,7 @@ class BrowseMangaSourceScreenModel(
             }
             it.copy(
                 filters = defaultFilters,
+                catalogFiltersSnapshot = MangaCatalogFilters.snapshot(defaultFilters),
                 listing = listing,
                 toolbarQuery = listing.query,
             )
@@ -385,7 +392,7 @@ class BrowseMangaSourceScreenModel(
     }
 
     fun setToolbarQuery(query: String?) {
-        mutableState.update { it.copy(toolbarQuery = query) }
+        mutableState.update { it.withToolbarQuery(query) }
     }
 
     sealed class Listing(open val query: String?, open val filters: FilterList) {
@@ -424,7 +431,19 @@ class BrowseMangaSourceScreenModel(
         val filters: FilterList = FilterList(),
         val toolbarQuery: String? = null,
         val dialog: Dialog? = null,
+        // Immutable applied values keep filter-sheet edits out of active paging requests.
+        val catalogFiltersSnapshot: String = "",
     ) {
         val isUserQuery get() = listing is Listing.Search && !listing.query.isNullOrEmpty()
+
+        fun withToolbarQuery(query: String?): State {
+            // Clearing or closing search must also clear the submitted catalog query.
+            val nextListing = if (query.isNullOrEmpty() && listing is Listing.Search) {
+                listing.copy(query = null)
+            } else {
+                listing
+            }
+            return copy(listing = nextListing, toolbarQuery = query)
+        }
     }
 }

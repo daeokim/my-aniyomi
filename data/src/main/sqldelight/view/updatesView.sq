@@ -24,6 +24,15 @@ getRecentUpdates:
 SELECT *
 FROM updatesView
 WHERE dateUpload > :after
+-- Sources return chapters newest first. Choose before LIMIT so backlog cannot hide other works.
+AND chapterId = (
+    SELECT latest._id
+    FROM chapters AS latest
+    WHERE latest.manga_id = updatesView.mangaId
+    ORDER BY latest.source_order ASC, latest._id DESC
+    LIMIT 1
+)
+ORDER BY datefetch DESC, mangaId DESC
 LIMIT :limit;
 
 getUpdatesByReadStatus:

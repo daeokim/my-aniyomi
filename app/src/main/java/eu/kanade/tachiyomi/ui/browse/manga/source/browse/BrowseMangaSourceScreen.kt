@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.browse.manga.source.browse
 
 // Personal fork: Fold8 replacement app, adaptive catalog and two-page reader changes.
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -99,11 +100,15 @@ data class BrowseMangaSourceScreen(
         val navigator = LocalNavigator.currentOrThrow
         val navigateUp: () -> Unit = {
             when {
-                !state.isUserQuery && state.toolbarQuery != null -> screenModel.setToolbarQuery(
+                state.toolbarQuery != null || state.isUserQuery -> screenModel.setToolbarQuery(
                     null,
                 )
                 else -> navigator.pop()
             }
+        }
+
+        BackHandler(enabled = state.toolbarQuery != null || state.isUserQuery) {
+            screenModel.setToolbarQuery(null)
         }
 
         if (screenModel.source is StubMangaSource) {

@@ -79,7 +79,7 @@ fun <T : Any> SourceCatalog(
                         val dayKey = if (tab == CatalogTab.WEEKDAY) day else 0
                         val queryKey = "$sourceKey:${tab.name}:$dayKey:$filterKey"
                         holder.SaveableStateProvider(queryKey) {
-                            val feed = remember(tab, dayKey, revision) { itemsFor(tab, day) }
+                            val feed = remember(tab, dayKey, revision, filterKey) { itemsFor(tab, day) }
                             CatalogGridPage(sourceKey, queryKey, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
                         }
                     }
