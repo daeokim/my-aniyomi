@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.MangaSource
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.data.library.LibraryUpdatePolicy
+import eu.kanade.tachiyomi.data.personal.ChapterAccess
 import tachiyomi.data.items.chapter.ChapterSanitizer
 import tachiyomi.domain.entries.manga.model.Manga
 import tachiyomi.domain.items.chapter.interactor.GetChaptersByMangaId
@@ -74,6 +75,8 @@ class SyncChaptersWithSource(
 
         val newChapters = mutableListOf<Chapter>()
         val updatedChapters = mutableListOf<Chapter>()
+        // Stored episodes the source lists as open for the first time (Naver previews leaving the 🔒 state).
+        val openedChapters = mutableListOf<Chapter>()
         val removedChapters = dbChapters.filterNot { dbChapter ->
             sourceChapters.any { sourceChapter ->
                 dbChapter.url == sourceChapter.url
@@ -139,6 +142,7 @@ class SyncChaptersWithSource(
                         toChangeChapter = toChangeChapter.copy(dateUpload = chapter.dateUpload)
                     }
                     updatedChapters.add(toChangeChapter)
+                    if (ChapterAccess.opened(manga.source, dbChapter.name, chapter.name)) openedChapters.add(toChangeChapter)
                 }
             }
         }
@@ -232,8 +236,9 @@ class SyncChaptersWithSource(
 
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 
-        return updatedToAdd.filterNot {
-            it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators
+        // An episode that just opened is the new one for the reader; a newly listed locked episode is not.
+        return (updatedToAdd + openedChapters).filterNot {
+            it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators || ChapterAccess.restricted(manga.source, it.name)
         }
     }
 }

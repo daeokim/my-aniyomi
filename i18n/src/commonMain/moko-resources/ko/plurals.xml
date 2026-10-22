@@ -9,6 +9,9 @@
     <plurals name="relative_time">
         <item quantity="other">%1$d일 전</item>
     </plurals>
+    <plurals name="upcoming_relative_time">
+        <item quantity="other">%1$d일 후</item>
+    </plurals>
     <plurals name="restore_completed_message">
         <item quantity="other">소요 시간: %1$s, 발생한 오류: %2$s</item>
     </plurals>

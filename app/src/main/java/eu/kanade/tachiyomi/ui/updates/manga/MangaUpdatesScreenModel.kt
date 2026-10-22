@@ -16,7 +16,7 @@ import eu.kanade.tachiyomi.data.download.manga.MangaDownloadCache
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
 import eu.kanade.tachiyomi.data.download.manga.model.MangaDownload
 import eu.kanade.tachiyomi.data.library.manga.MangaLibraryUpdateJob
-import eu.kanade.tachiyomi.util.lang.toLocalDate
+import eu.kanade.tachiyomi.data.personal.ChapterAccess
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
@@ -373,8 +373,9 @@ class MangaUpdatesScreenModel(
             return items
                 .map { MangaUpdatesUiModel.Item(it) }
                 .insertSeparators { before, after ->
-                    val beforeDate = before?.item?.update?.dateFetch?.toLocalDate()
-                    val afterDate = after?.item?.update?.dateFetch?.toLocalDate()
+                    // Personal fork: group by release day (Naver's 23:00 episodes belong to the next day).
+                    val beforeDate = before?.item?.update?.let { ChapterAccess.releaseDate(it.sourceId, it.dateUpload, it.dateFetch) }
+                    val afterDate = after?.item?.update?.let { ChapterAccess.releaseDate(it.sourceId, it.dateUpload, it.dateFetch) }
                     when {
                         beforeDate != afterDate && afterDate != null -> MangaUpdatesUiModel.Header(afterDate)
                         // Return null to avoid adding a separator between two items.

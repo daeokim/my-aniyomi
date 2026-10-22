@@ -69,6 +69,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import eu.kanade.tachiyomi.data.personal.ChapterAccess
+import tachiyomi.domain.items.chapter.interactor.GetChaptersByMangaId
 
 class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -166,6 +168,12 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
         val restrictions = libraryPreferences.autoUpdateItemRestrictions().get()
         val skippedUpdates = mutableListOf<Pair<Manga, String?>>()
         val (_, fetchWindowUpperBound) = mangaFetchInterval.getWindow(ZonedDateTime.now())
+        // Locked Naver episodes can never be read, so they must not keep a caught-up work out of updates.
+        val lockedUnread = if (LibraryPreferences.ENTRY_HAS_UNVIEWED !in restrictions) emptyMap() else
+            listToUpdate.filter { it.manga.source == ChapterAccess.NAVER && it.unreadCount > 0 }.associate { entry ->
+                entry.manga.id to Injekt.get<GetChaptersByMangaId>().await(entry.manga.id)
+                    .count { !it.read && ChapterAccess.restricted(entry.manga.source, it.name) }.toLong()
+            }
 
         mangaToUpdate = listToUpdate
             .distinctBy { it.manga.id }
@@ -173,7 +181,7 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
                 val reason = LibraryUpdatePolicy.skip(
                     manual = manualUpdate, alwaysUpdate = entry.manga.updateStrategy == UpdateStrategy.ALWAYS_UPDATE,
                     completed = entry.manga.status.toInt() == SManga.COMPLETED,
-                    unviewed = entry.unreadCount, total = entry.totalChapters, started = entry.hasStarted,
+                    unviewed = entry.unreadCount - (lockedUnread[entry.manga.id] ?: 0L), total = entry.totalChapters, started = entry.hasStarted,
                     nextUpdate = entry.manga.nextUpdate, windowEnd = fetchWindowUpperBound, restrictions = restrictions,
                 )
                 if (reason != null) {

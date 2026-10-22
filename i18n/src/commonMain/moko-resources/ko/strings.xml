@@ -389,6 +389,7 @@
     <string name="lock_with_biometrics">잠금 해제 필요</string>
     <string name="pref_category_appearance">모양</string>
     <string name="relative_time_today">오늘</string>
+    <string name="relative_time_tomorrow">내일</string>
     <string name="pref_category_library_update">전역 업데이트</string>
     <string name="pref_category_security">보안 및 개인정보 보호</string>
     <string name="lock_always">항상</string>

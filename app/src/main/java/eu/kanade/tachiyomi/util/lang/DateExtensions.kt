@@ -56,6 +56,8 @@ fun LocalDate.toRelativeString(
     val difference = ChronoUnit.DAYS.between(this, now)
     return when {
         difference < -7 -> dateFormat.format(this)
+        // Languages without a "one" plural form (Korean) would otherwise read "in 1 day".
+        difference == -1L -> context.stringResource(MR.strings.relative_time_tomorrow)
         difference < 0 -> context.pluralStringResource(
             MR.plurals.upcoming_relative_time,
             difference.toInt().absoluteValue,

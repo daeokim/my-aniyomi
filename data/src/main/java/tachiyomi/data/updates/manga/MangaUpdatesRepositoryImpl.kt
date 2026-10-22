@@ -64,6 +64,7 @@ class MangaUpdatesRepositoryImpl(
         lastPageRead = lastPageRead,
         sourceId = sourceId,
         dateFetch = dateFetch,
+        dateUpload = dateUpload,
         coverData = MangaCover(
             mangaId = mangaId,
             sourceId = sourceId,
