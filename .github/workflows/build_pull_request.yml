@@ -33,7 +33,7 @@ jobs:
       - name: Run independent policy tests
         run: bash tools/test-personal.sh
       - name: Compile app and run Android JVM tests
-        run: bash gradlew :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
+        run: bash gradlew :domain:testReleaseUnitTest :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:

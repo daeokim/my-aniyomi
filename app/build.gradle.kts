@@ -26,13 +26,13 @@ android {
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 13208
-        versionName = "0.18.2.1-dtoon-fold8.8"
+        versionCode = 13209
+        versionName = "Dtoon8.9"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
         buildConfigField("String", "BUILD_TIME", "\"${getBuildTime(useLastCommitTime = false)}\"")
-        buildConfigField("boolean", "UPDATER_ENABLED", "false")
+        buildConfigField("boolean", "UPDATER_ENABLED", "true")
 
         // Put these fields in acra.properties
         // val acraProperties = Properties()

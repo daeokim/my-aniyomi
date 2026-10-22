@@ -50,7 +50,6 @@ import tachiyomi.presentation.core.components.ScrollbarLazyColumn
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.icons.CustomIcons
-import tachiyomi.presentation.core.icons.Discord
 import tachiyomi.presentation.core.icons.Github
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -181,15 +180,11 @@ object AboutScreen : Screen() {
                             icon = Icons.Outlined.Public,
                             url = "https://aniyomi.org",
                         )
-                        LinkIcon(
-                            label = "Discord",
-                            icon = CustomIcons.Discord,
-                            url = "https://discord.gg/F32UjdJZrR",
-                        )
+                        // Personal fork: issues belong here, not in the official Aniyomi community.
                         LinkIcon(
                             label = "GitHub",
                             icon = CustomIcons.Github,
-                            url = "https://github.com/aniyomiorg/aniyomi",
+                            url = "https://github.com/daeokim/my-aniyomi",
                         )
                     }
                 }

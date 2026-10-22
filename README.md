@@ -35,11 +35,11 @@
 - 앱 ID가 원본 애니요미와 같은 `xyz.jmir.tachiyomi.mi`라서 **함께 설치되지 않고 교체**됩니다.
 - 공식 애니요미나 다른 포크와 서명이 달라 그 위에 바로 덮어 설치할 수 없습니다. **백업 생성 → 다운로드 폴더 따로 보관 → 기존 앱 삭제 → Dtoon 설치 → 백업 복원** 순서로 진행하세요.
 - 이전 Dtoon 버전 위에는 그대로 업데이트 설치됩니다.
-- 앱 안의 자동 업데이트 확인은 꺼져 있습니다. 새 버전은 [Releases](https://github.com/daeokim/my-aniyomi/releases)에서 받으세요.
+- Dtoon8.9부터는 **설정 → 정보 → 업데이트 확인**에서 새 버전을 받을 수 있고, 앱 시작 시에도 최대 3일에 한 번 확인합니다. 이전 버전은 [Releases](https://github.com/daeokim/my-aniyomi/releases)에서 직접 받으세요.
 
 ## 릴리스 만들기 (저장소 관리자용)
 
-`app/build.gradle.kts`의 `versionName`과 `versionCode`를 올려 `main`에 푸시하면 [Dtoon release](.github/workflows/release.yml) 워크플로가 서명된 APK를 빌드해 Releases에 올립니다. 이미 릴리스된 버전이면 건너뜁니다. Actions 탭에서 직접 실행할 수도 있습니다.
+`app/build.gradle.kts`의 `versionName`(예: `Dtoon8.9`)과 `versionCode`를 올리고 [README.personal.md](./README.personal.md)에 같은 이름의 `## Dtoon8.9` 섹션(릴리스 노트)을 추가해 `main`에 푸시하면 [Dtoon release](.github/workflows/release.yml) 워크플로가 서명된 APK를 빌드해 Releases에 올립니다. 이미 릴리스된 버전이면 건너뜁니다. Actions 탭에서 직접 실행할 수도 있습니다.
 
 처음 한 번은 **Settings → Secrets and variables → Actions**에 아래 4개를 등록해야 합니다. 값은 로컬 `personal/signing/`의 파일에서 가져옵니다.
 

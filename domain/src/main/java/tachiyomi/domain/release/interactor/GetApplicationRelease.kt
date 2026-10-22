@@ -51,6 +51,13 @@ class GetApplicationRelease(
         versionName: String,
         versionTag: String,
     ): Boolean {
+        val newDtoon = dtoonVersion(versionTag)
+        val oldDtoon = dtoonVersion(versionName)
+        if (newDtoon != null || oldDtoon != null) {
+            // Personal fork tags ("Dtoon8.9", formerly "v0.18.2.1-dtoon-fold8.8") are never compared as semver.
+            if (newDtoon == null || oldDtoon == null) return false
+            return compareValuesBy(newDtoon, oldDtoon, { it.first }, { it.second }) > 0
+        }
         // Removes prefixes like "r" or "v"
         val newVersion = versionTag.replace("[^\\d.]".toRegex(), "")
         return if (isPreview) {
@@ -75,6 +82,9 @@ class GetApplicationRelease(
         }
     }
 
+    private fun dtoonVersion(value: String): Pair<Int, Int>? =
+        DTOON_VERSION.find(value)?.destructured?.let { (major, minor) -> major.toInt() to minor.toInt() }
+
     data class Arguments(
         val isPreview: Boolean,
         val commitCount: Int,
@@ -87,5 +97,9 @@ class GetApplicationRelease(
         data class NewUpdate(val release: Release) : Result
         data object NoNewUpdate : Result
         data object OsTooOld : Result
+    }
+
+    private companion object {
+        val DTOON_VERSION = Regex("(?:dtoon|fold)(\\d+)\\.(\\d+)", RegexOption.IGNORE_CASE)
     }
 }

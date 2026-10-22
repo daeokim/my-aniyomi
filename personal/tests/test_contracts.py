@@ -14,7 +14,11 @@ class IntegrationContracts(unittest.TestCase):
         code = (ROOT / 'app/build.gradle.kts').read_text()
         self.assertIn('applicationId = "xyz.jmir.tachiyomi.mi"', code)
         self.assertNotIn('applicationIdSuffix', code)
-        self.assertIn('"UPDATER_ENABLED", "false"', code)
+        # Updates come from this fork's own releases, never the official Aniyomi repository.
+        self.assertIn('"UPDATER_ENABLED", "true"', code)
+        updater = (JAVA / 'tachiyomi/data/updater/AppUpdateChecker.kt').read_text()
+        self.assertIn('"daeokim/my-aniyomi"', updater)
+        self.assertNotIn('"aniyomiorg/aniyomi', updater)
         self.assertIn('personal/signing/signing.properties', code)
         self.assertIn('personal/signing/', (ROOT / '.gitignore').read_text())
 
