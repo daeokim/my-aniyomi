@@ -16,7 +16,7 @@ import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadCache
 import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.download.anime.model.AnimeDownload
 import eu.kanade.tachiyomi.data.library.anime.AnimeLibraryUpdateJob
-import eu.kanade.tachiyomi.util.lang.toLocalDate
+import eu.kanade.tachiyomi.data.personal.ChapterAccess
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
@@ -406,8 +406,9 @@ class AnimeUpdatesScreenModel(
             return items
                 .map { AnimeUpdatesUiModel.Item(it) }
                 .insertSeparators { before, after ->
-                    val beforeDate = before?.item?.update?.dateFetch?.toLocalDate()
-                    val afterDate = after?.item?.update?.dateFetch?.toLocalDate()
+                    // Personal fork: group by release day, never later than discovery.
+                    val beforeDate = before?.item?.update?.let { ChapterAccess.releaseDate(it.sourceId, it.dateUpload, it.dateFetch) }
+                    val afterDate = after?.item?.update?.let { ChapterAccess.releaseDate(it.sourceId, it.dateUpload, it.dateFetch) }
                     when {
                         beforeDate != afterDate && afterDate != null -> AnimeUpdatesUiModel.Header(afterDate)
                         // Return null to avoid adding a separator between two items.

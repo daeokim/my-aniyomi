@@ -72,6 +72,7 @@ class AnimeUpdatesRepositoryImpl(
         totalSeconds = totalSeconds,
         sourceId = sourceId,
         dateFetch = dateFetch,
+        dateUpload = dateUpload,
         coverData = AnimeCover(
             animeId = animeId,
             sourceId = sourceId,

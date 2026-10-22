@@ -89,6 +89,14 @@ def recommend(title):
     return f"{label(seed)} · 장르 {', '.join(sorted(genres))} · {source}", ranked[:18]
 
 
+def annotate(title, lines):
+    """One notice per title keeps under the per-step annotation limit (10)."""
+    if not os.environ.get('GITHUB_ACTIONS'):
+        return
+    message = '\n'.join(lines).replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+    print(f'::notice title={title.replace(",", " ").replace("::", ":")}::{message}')
+
+
 def main():
     lines = ['## 장르별 추천 실제 결과 (AniList)', '']
     same_country = total = 0
@@ -103,7 +111,10 @@ def main():
             same_country += sum(1 for m in items[:8] if m.get('countryOfOrigin') == seed_country.group(1))
         lines.append(f'- **{title}** → {summary}')
         lines += [f'  - {i + 1}. {label(m)}' for i, m in enumerate(items[:8])]
+        # Annotations are readable through the public check-runs API, unlike the job summary.
+        annotate(f'추천 · {title}', [summary] + [f'{i + 1}. {label(m)}' for i, m in enumerate(items[:8])])
     lines += ['', f'상위 8개 중 원작과 같은 나라 작품: {same_country}/{total}']
+    annotate('추천 · 요약', [f'상위 8개 중 원작과 같은 나라 작품: {same_country}/{total}'])
     report = '\n'.join(lines)
     print(report)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
