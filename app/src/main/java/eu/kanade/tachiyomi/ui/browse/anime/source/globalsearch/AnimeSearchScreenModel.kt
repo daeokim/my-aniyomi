@@ -165,7 +165,7 @@ abstract class AnimeSearchScreenModel(
                         }
 
                         if (isActive) {
-                            updateItem(source, AnimeSearchItemResult.Success(titles))
+                            updateItem(source, AnimeSearchItemResult.Success(titles, hasNextPage = page.hasNextPage))
                         }
                     } catch (e: Exception) {
                         if (isActive) {
@@ -223,9 +223,11 @@ sealed interface AnimeSearchItemResult {
 
     data class Success(
         val result: List<Anime>,
+        val hasNextPage: Boolean = false,
     ) : AnimeSearchItemResult {
+        val singleCompleteResult get() = if (hasNextPage) null else result.singleOrNull()
         val isEmpty: Boolean
-            get() = result.isEmpty()
+            get() = result.isEmpty() && !hasNextPage
     }
 
     fun isVisible(onlyShowHasResults: Boolean): Boolean {

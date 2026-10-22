@@ -20,10 +20,13 @@ import eu.kanade.domain.track.manga.interactor.TrackChapter
 import eu.kanade.domain.track.model.AutoTrackState
 import eu.kanade.domain.track.service.TrackPreferences
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.data.personal.PersonalStore
+import eu.kanade.tachiyomi.data.personal.EpisodeMapping
+import eu.kanade.tachiyomi.data.personal.EpisodeMappingStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tachiyomi.domain.entries.anime.interactor.GetAnime
+import tachiyomi.domain.entries.manga.interactor.GetManga
 import tachiyomi.domain.items.chapter.model.ChapterUpdate
 import tachiyomi.domain.items.chapter.repository.ChapterRepository
 import tachiyomi.domain.items.episode.model.EpisodeUpdate
@@ -63,15 +66,18 @@ class ProgressCopyScreenModel(private val fromId: Long, private val toId: Long, 
     StateScreenModel<ProgressCopyState>(ProgressCopyState()) {
     private val chapters = Injekt.get<ChapterRepository>()
     private val episodes = Injekt.get<EpisodeRepository>()
+    // Mapping keys use source identities captured at load, so they survive database ID changes.
+    private var works: Pair<EpisodeMapping.Work, EpisodeMapping.Work>? = null
 
     init {
         screenModelScope.launch {
             try {
                 val source = rows(fromId).filter { it.complete || it.bookmark }
                 val target = rows(toId)
+                val (fromWork, toWork) = works(source, target).also { works = it }
                 val matches = mutableMapOf<Long, Long>()
                 source.forEach { row ->
-                    val url = mapPref(row).get()
+                    val url = EpisodeMappingStore.read(fromWork, toWork, row.url)
                     target.singleOrNull { it.url == url }?.takeIf { it.id !in matches.values }?.let { matches[row.id] = it.id }
                 }
                 val message = when {
@@ -111,8 +117,11 @@ class ProgressCopyScreenModel(private val fromId: Long, private val toId: Long, 
                     if (result is SetSeenStatus.Result.InternalError) throw result.error
                     if (plan.bookmark.isNotEmpty()) episodes.updateAllEpisodes(plan.bookmark.map { EpisodeUpdate(id = it, bookmark = true) })
                 }
-                snapshot.source.forEach { row ->
-                    snapshot.matches[row.id]?.let { id -> snapshot.target.find { it.id == id } }?.let { mapPref(row).set(it.url) }
+                works?.let { (fromWork, toWork) ->
+                    snapshot.source.forEach { row ->
+                        snapshot.matches[row.id]?.let { id -> snapshot.target.find { it.id == id } }
+                            ?.let { EpisodeMappingStore.save(fromWork, toWork, row.url, it.url) }
+                    }
                 }
                 val number = plan.trackNumber
                 if (syncTrackers && number != null) {
@@ -132,7 +141,19 @@ class ProgressCopyScreenModel(private val fromId: Long, private val toId: Long, 
         episodes.getEpisodeByAnimeId(id).map { CopyRow(it.id, it.name, it.url, it.episodeNumber, it.seen, it.bookmark) }
     }
 
-    private fun mapPref(row: CopyRow) = PersonalStore.text("episode_map:${PersonalStore.key("$manga:$fromId:$toId:${row.url}")}")
+    private suspend fun works(source: List<CopyRow>, target: List<CopyRow>) = if (manga) {
+        val get = Injekt.get<GetManga>()
+        val from = get.await(fromId) ?: error("Source work unavailable")
+        val to = get.await(toId) ?: error("Target work unavailable")
+        EpisodeMapping.Work(true, fromId, from.source, from.url, source.map { it.url }) to
+            EpisodeMapping.Work(true, toId, to.source, to.url, target.map { it.url })
+    } else {
+        val get = Injekt.get<GetAnime>()
+        val from = get.await(fromId) ?: error("Source work unavailable")
+        val to = get.await(toId) ?: error("Target work unavailable")
+        EpisodeMapping.Work(false, fromId, from.source, from.url, source.map { it.url }) to
+            EpisodeMapping.Work(false, toId, to.source, to.url, target.map { it.url })
+    }
 }
 
 /** Explicit, one-to-one correspondence. Page offsets and playback timestamps are never guessed. */

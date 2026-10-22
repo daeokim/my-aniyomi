@@ -63,10 +63,10 @@ class LatestMangaUpdatesTest(unittest.TestCase):
         self.chapter(2, 1)
         self.assertEqual([1], self.ids())
 
-    def test_old_latest_does_not_fall_back_to_newly_fetched_backlog(self):
+    def test_recently_discovered_latest_is_visible_even_with_an_old_upload_date(self):
         self.chapter(1, 0, uploaded=20)
         self.chapter(2, 1, uploaded=100)
-        self.assertEqual([], self.ids(after=50))
+        self.assertEqual([1], self.ids(after=50))
 
     def test_duplicate_source_order_has_deterministic_single_winner(self):
         self.chapter(1, 0)
@@ -86,9 +86,9 @@ class LatestMangaUpdatesTest(unittest.TestCase):
         self.chapter(2, 1, fetched=200)
         self.assertEqual([], self.ids())
 
-    def test_date_limit_is_upload_date_and_recent_fetch_does_not_override_it(self):
+    def test_date_limit_is_discovery_time_when_source_upload_is_old(self):
         self.chapter(1, 0, uploaded=20, fetched=300)
-        self.assertEqual([], self.ids(after=50))
+        self.assertEqual([1], self.ids(after=50))
 
     def test_full_500_work_limit_is_deterministic(self):
         for manga_id in range(1, 506):
@@ -110,8 +110,8 @@ class LatestMangaUpdatesTest(unittest.TestCase):
         self.assertEqual(before, self.db.execute("SELECT * FROM chapters ORDER BY _id").fetchall())
         self.assertEqual(changes, self.db.total_changes)
 
-    def test_upload_cutoff_is_strict_even_with_a_recent_fetch(self):
-        self.chapter(1, 0, uploaded=50, fetched=500)
+    def test_discovery_cutoff_is_strict_even_with_a_recent_upload(self):
+        self.chapter(1, 0, uploaded=500, fetched=50)
         self.assertEqual([], self.ids(after=50))
         self.assertEqual([1], self.ids(after=49))
 

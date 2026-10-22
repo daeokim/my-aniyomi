@@ -419,6 +419,23 @@ class PlayerViewModel @JvmOverloads constructor(
     private var savedSubtitleSelection: VideoTrack? = null
     private var savedSubtitleOff: Boolean? = null
     private var reconnecting = false
+    private var recoveryJob: Job? = null
+    private var pendingConnectionMessage: String? = null
+    private val connectionRetry = eu.kanade.tachiyomi.util.system.ConnectionRetry()
+    fun retryStreamAfterConnectionChange() {
+        val message = pendingConnectionMessage ?: return
+        if (!reconnecting && connectionRetry.claim(java.net.ConnectException(message), busy = false)) recoverStream(message)
+    }
+    private fun cancelStaleRecovery() {
+        recoveryJob?.cancel()
+        pendingConnectionMessage = null
+        connectionRetry.reset()
+        savedAudioSelection = null
+        savedSubtitleSelection = null
+        savedSubtitleOff = null
+        recoveryResolution = null
+        reconnecting = false
+    }
     private var recoveryEpisodeId = -1L
     private var recoveryAttempts = 0
     private var recoveryResolution: Int? = null
@@ -436,8 +453,9 @@ class PlayerViewModel @JvmOverloads constructor(
         if (EpisodeLoader.isDownload(episode.toDomainEpisode() ?: return false, anime)) return false
         if (recoveryEpisodeId != episode.id) { recoveryEpisodeId = episode.id ?: -1L; recoveryAttempts = 0 }
         if (reconnecting || recoveryAttempts >= 2) return false
-        val transient = listOf("http", "connection", "network", "timeout", "timed out", "failed", "error", "unable").any { message.contains(it, true) }
+        val transient = eu.kanade.tachiyomi.util.system.ConnectionRecovery.isTransientPlayback(message)
         if (!transient) return false
+        pendingConnectionMessage = message
         recoveryAttempts++
         reconnecting = true
         recoveryResolution = currentVideo.value?.resolution
@@ -447,16 +465,21 @@ class PlayerViewModel @JvmOverloads constructor(
         if (positionMs != null && positionMs >= 0) episode.last_second_seen = positionMs
         saveCurrentEpisodeWatchingProgress()
         eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${source.id}", "재생", java.io.IOException(message))
-        viewModelScope.launchIO {
+        recoveryJob = viewModelScope.launchIO {
             try {
                 delay(1000L * recoveryAttempts)
+                if (currentEpisode.value?.id != episode.id || currentAnime.value?.id != anime.id) return@launchIO
                 val fresh = EpisodeLoader.getHosters(episode.toDomainEpisode() ?: error("Episode unavailable"), anime, source)
+                if (currentEpisode.value?.id != episode.id || currentAnime.value?.id != anime.id) return@launchIO
                 if (fresh.isEmpty()) throw java.io.IOException("No playback links")
                 _selectedHosterVideoIndex.value = -1 to -1
                 _currentVideo.value = null
                 loadHosters(source, fresh, -1, -1)
-            } catch (e: CancellationException) { reconnecting = false; throw e }
-            catch (e: Exception) {
+            } catch (e: CancellationException) {
+                if (currentEpisode.value?.id == episode.id) reconnecting = false
+                throw e
+            } catch (e: Exception) {
+                if (currentEpisode.value?.id != episode.id || currentAnime.value?.id != anime.id) return@launchIO
                 reconnecting = false
                 eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${source.id}", "재생", e)
                 withUIContext { activity.showToast("재생 주소를 다시 받지 못했습니다. 소스에서 회차를 다시 열어 주세요.") }
@@ -526,6 +549,7 @@ class PlayerViewModel @JvmOverloads constructor(
         savedAudioSelection = null
         savedSubtitleSelection = null
         savedSubtitleOff = null
+        pendingConnectionMessage = null
         reconnecting = false
         recoveryResolution = null
         currentSource.value?.let { eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${it.id}", "재생", null) }
@@ -1160,6 +1184,7 @@ class PlayerViewModel @JvmOverloads constructor(
     }
 
     override fun onCleared() {
+        cancelStaleRecovery()
         if (currentEpisode.value != null) {
             saveWatchingProgress(currentEpisode.value!!)
             episodeToDownload?.let {
@@ -1338,6 +1363,7 @@ class PlayerViewModel @JvmOverloads constructor(
                 val episode = currentPlaylist.value.first { it.id == episodeId }
                 val source = sourceManager.getOrStub(anime.source)
 
+                if (_currentEpisode.value?.id != episode.id) cancelStaleRecovery()
                 _currentEpisode.update { _ -> episode }
                 _currentSource.update { _ -> source }
 
@@ -1701,6 +1727,7 @@ class PlayerViewModel @JvmOverloads constructor(
 
         val chosenEpisode = currentPlaylist.value.firstOrNull { ep -> ep.id == episodeId } ?: return null
 
+        if (_currentEpisode.value?.id != chosenEpisode.id) cancelStaleRecovery()
         _currentEpisode.update { _ -> chosenEpisode }
         updateEpisode(chosenEpisode)
 

@@ -256,6 +256,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                         }
                     },
                 ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = networkPreferences.externalRecommendations(),
+                    title = "외부 추천 조회",
+                    subtitle = "작품 상세의 AniList 제목·장르·추천 조회를 허용합니다. 트래킹·계정 연동에는 영향을 주지 않습니다.",
+                ),
                 Preference.PreferenceItem.ListPreference(
                     preference = networkPreferences.dohProvider(),
                     entries = persistentMapOf(
@@ -275,6 +280,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                         PREF_DOH_LIBREDNS to "LibreDNS",
                     ),
                     title = stringResource(MR.strings.pref_dns_over_https),
+                    subtitle = "끄면 시스템 DNS를 사용합니다. WG의 DNS와 라우팅은 터널 설정에 따라 달라집니다. 변경은 앱 재시작 후 적용됩니다.",
                     onValueChanged = {
                         context.toast(MR.strings.requires_app_restart)
                         true
