@@ -6,9 +6,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +26,8 @@ import eu.kanade.tachiyomi.ui.entries.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen
 import eu.kanade.tachiyomi.ui.browse.manga.source.browse.BrowseMangaSourceScreen
 import eu.kanade.tachiyomi.ui.browse.anime.source.browse.BrowseAnimeSourceScreen
+import eu.kanade.tachiyomi.ui.browse.anime.source.globalsearch.GlobalAnimeSearchScreen
+import eu.kanade.tachiyomi.ui.browse.manga.source.globalsearch.GlobalMangaSearchScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
@@ -50,6 +54,7 @@ data object DtoonHomeTab : Tab {
         var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
         var choosingLink by rememberSaveable { mutableStateOf(false) }
         var showAllSources by rememberSaveable { mutableStateOf(false) }
+        var searchMenu by remember { mutableStateOf(false) }
         var revision by remember { mutableIntStateOf(0) }
         val selectedEntry = selectedKey?.let { key -> (state.recent + state.library + state.feed).firstOrNull { it.key == key } }
         if (selectedEntry != null) {
@@ -81,12 +86,20 @@ data object DtoonHomeTab : Tab {
                 }, confirmButton = { TextButton(onClick = { selectedKey = null; choosingLink = false }) { Text("닫기") } })
         }
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Text("Dtoon", Modifier.padding(16.dp), style = MaterialTheme.typography.headlineSmall)
-            // One scrollable line instead of up to three wrapped rows on the folded screen.
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilterChip(selected = category == -2, onClick = { category = -2 }, label = { Text("전체") })
-                FilterChip(selected = category == -1, onClick = { category = -1 }, label = { Text("계속 보기") })
-                MediaKind.entries.forEachIndexed { i, kind -> FilterChip(selected = category == i, onClick = { category = i }, label = { Text(kind.label) }) }
+            // No separate title row: the category chips and search share one line on the folded screen.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FilterChip(selected = category == -2, onClick = { category = -2 }, label = { Text("전체") })
+                    FilterChip(selected = category == -1, onClick = { category = -1 }, label = { Text("계속 보기") })
+                    MediaKind.entries.forEachIndexed { i, kind -> FilterChip(selected = category == i, onClick = { category = i }, label = { Text(kind.label) }) }
+                }
+                Box {
+                    IconButton(onClick = { searchMenu = true }) { Icon(Icons.Outlined.Search, contentDescription = "검색") }
+                    DropdownMenu(expanded = searchMenu, onDismissRequest = { searchMenu = false }) {
+                        DropdownMenuItem(text = { Text("만화·웹툰 검색") }, onClick = { searchMenu = false; navigator.push(GlobalMangaSearchScreen()) })
+                        DropdownMenuItem(text = { Text("영상 검색") }, onClick = { searchMenu = false; navigator.push(GlobalAnimeSearchScreen()) })
+                    }
+                }
             }
             state.error?.let { Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
             val kind = MediaKind.entries.getOrNull(category)

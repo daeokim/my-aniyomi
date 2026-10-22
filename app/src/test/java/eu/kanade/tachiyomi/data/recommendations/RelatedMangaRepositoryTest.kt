@@ -20,14 +20,15 @@ import java.io.IOException
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RelatedMangaRepositoryTest {
-    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false, country: String? = null): String = buildJsonObject {
+    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false, country: String? = null, tags: List<Pair<String, Int>> = emptyList()): String = buildJsonObject {
         put("id", id); put("type", type); put("format", format); put("isAdult", adult)
         if (country != null) put("countryOfOrigin", country)
+        if (tags.isNotEmpty()) put("tags", buildJsonArray { tags.forEach { (name, rank) -> add(buildJsonObject { put("name", name); put("rank", rank) }) } })
         put("title", buildJsonObject { put("english", title) })
         put("genres", buildJsonArray { genres.forEach { add(JsonPrimitive(it)) } })
     }.toString()
-    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList(), country: String? = null): String {
-        val base = Json.parseToJsonElement(media(1, genres, country = country)).toString().dropLast(1)
+    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList(), country: String? = null, tags: List<Pair<String, Int>> = emptyList(), type: String = "MANGA"): String {
+        val base = Json.parseToJsonElement(media(1, genres, country = country, tags = tags, type = type)).toString().dropLast(1)
         return """{"data":{"Media":$base,"recommendations":{"nodes":[${nodes.joinToString { """{"rating":${it.first},"mediaRecommendation":${it.second}}""" }}]}}}}"""
     }
     private fun page(vararg items: String) = """{"data":{"Page":{"media":[${items.joinToString()}]}}}"""
@@ -228,5 +229,42 @@ class RelatedMangaRepositoryTest {
             }
         }
         assertEquals(listOf(3), (repo.load("Base", 1) as RelatedMangaState.Ready).items.map { it.id })
+    }
+    @Test fun `genre-only fill without a shared theme is dropped once enough works share one`() = runTest {
+        val theme = listOf("Food" to 90)
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR", tags = theme)
+                RelatedMangaRepository.GENRE_COUNTRY_QUERY -> page(
+                    *((10..15).map { media(it, country = "KR", tags = theme) } + media(16, country = "KR", tags = listOf("Tragedy" to 95))).toTypedArray(),
+                )
+                else -> fail("Enough same-country works")
+            }
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        assertEquals((10..15).toList(), state.items.map { it.id })
+        assertTrue(state.items.all { it.commonTags == setOf("food") })
+    }
+    @Test fun `weak and spoiler tags never count as shared themes`() = runTest {
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR", tags = listOf("Food" to 30))
+                else -> page(*(10..15).map { media(it, country = "KR", tags = listOf("Food" to 30)) }.toTypedArray(), media(16, country = "KR"))
+            }
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        // No strong seed tags: nothing is filtered and no theme is claimed.
+        assertEquals(7, state.items.size)
+        assertTrue(state.items.all { it.commonTags.isEmpty() })
+    }
+    @Test fun `anime mode queries anime and rejects manga entries`() = runTest {
+        val queries = mutableListOf<String>()
+        val repo = RelatedMangaRepository(requestScope = backgroundScope, anime = true) { query, _ ->
+            queries += query
+            related(type = "ANIME", nodes = listOf(9 to media(2, type = "ANIME"), 8 to media(3, type = "MANGA"), 7 to media(4, type = "ANIME"), 6 to media(5, type = "ANIME")))
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        assertEquals(listOf(2, 4, 5), state.items.map { it.id })
+        assertTrue(queries.all { "type: ANIME" in it && "type: MANGA" !in it })
     }
 }

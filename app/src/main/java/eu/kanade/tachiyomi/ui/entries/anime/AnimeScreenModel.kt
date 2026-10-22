@@ -50,6 +50,10 @@ import eu.kanade.tachiyomi.util.AniChartApi
 import eu.kanade.tachiyomi.util.episode.getNextUnseen
 import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.toast
+import eu.kanade.tachiyomi.network.NetworkPreferences
+import eu.kanade.tachiyomi.data.recommendations.RelatedMangaState
+import eu.kanade.tachiyomi.data.recommendations.RelatedMangaRepository
+import eu.kanade.tachiyomi.data.personal.PersonalStore
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
@@ -193,6 +197,82 @@ class AnimeScreenModel(
     /**
      * Helper function to update the UI state only if it's currently in success state
      */
+    // Personal fork: AniList genre recommendations, the same flow as manga detail screens.
+    private var genreJob: kotlinx.coroutines.Job? = null
+    private val genreGeneration = java.util.concurrent.atomic.AtomicLong()
+    private var genreSeed: Int? = null
+    private var trackedGenreSeed: Int? = null
+
+    private fun genreSeedPreference() = successState?.anime?.let {
+        PersonalStore.number("recommendation_anime:" + PersonalStore.key("${it.source}:${it.url}"))
+    }
+
+    private fun observeGenreRecommendations() {
+        screenModelScope.launchIO {
+            combine(
+                getTracks.subscribe(animeId),
+                Injekt.get<NetworkPreferences>().externalRecommendations().changes(),
+            ) { tracks, enabled ->
+                tracks.firstOrNull { it.trackerId == TrackerManager.ANILIST }?.remoteId?.toInt()?.takeIf { it > 0 } to enabled
+            }
+                .distinctUntilChanged()
+                .catch { updateSuccessState { it.copy(genreRecommendations = RelatedMangaState.Error) } }
+                .collectLatest { (id, _) ->
+                    trackedGenreSeed = id
+                    genreSeed = genreSeedPreference()?.get()?.takeIf { it > 0 } ?: id
+                    loadGenreRecommendations(forceRefresh = false)
+                }
+        }
+    }
+
+    fun chooseGenreSeed(id: Int) {
+        genreSeed = id
+        genreSeedPreference()?.set(id)
+        loadGenreRecommendations(forceRefresh = false)
+    }
+
+    fun resetGenreSeed() {
+        genreSeedPreference()?.delete()
+        genreSeed = trackedGenreSeed
+        loadGenreRecommendations(forceRefresh = true)
+    }
+
+    fun retryGenreRecommendations() = loadGenreRecommendations(forceRefresh = true)
+
+    private fun loadGenreRecommendations(forceRefresh: Boolean) {
+        val title = successState?.anime?.title ?: return
+        val generation = genreGeneration.incrementAndGet()
+        genreJob?.cancel()
+        if (!Injekt.get<NetworkPreferences>().externalRecommendations().get()) {
+            updateSuccessState { it.copy(genreRecommendations = RelatedMangaState.Disabled) }
+            return
+        }
+        val seed = genreSeed
+        genreJob = screenModelScope.launchIO {
+            updateSuccessState { it.copy(genreRecommendations = RelatedMangaState.Loading) }
+            val result = try {
+                RelatedMangaRepository.animeShared.load(title, seed, forceRefresh)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                RelatedMangaState.Error
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (generation == genreGeneration.get() && seed == genreSeed &&
+                Injekt.get<NetworkPreferences>().externalRecommendations().get()
+            ) {
+                updateSuccessState { it.copy(genreRecommendations = result) }
+            }
+        }
+    }
+
+    suspend fun genreLibraryMatches(item: eu.kanade.tachiyomi.data.recommendations.RelatedManga): List<Anime> {
+        val names = (item.aliases + item.title).map { RelatedMangaRepository.normalizeTitle(it) }.toSet()
+        return Injekt.get<tachiyomi.domain.entries.anime.interactor.GetLibraryAnime>().await()
+            .map { it.anime }.filter { RelatedMangaRepository.normalizeTitle(it.title) in names }
+            .sortedByDescending { it.source == successState?.anime?.source }
+    }
+
     private inline fun updateSuccessState(func: (State.Success) -> State.Success) {
         mutableState.update {
             when (it) {
@@ -267,6 +347,7 @@ class AnimeScreenModel(
 
             observeRelatedAnime()
             syncRelatedAnime()
+            observeGenreRecommendations()
 
             // Fetch info-episodes when needed
             if ((needRefreshInfo || needRefreshEpisode || needRefreshSeason) && screenModelScope.isActive) {
@@ -1612,6 +1693,7 @@ class AnimeScreenModel(
             val hasLoggedInTrackers: Boolean = false,
             val relatedAnime: List<AnimeRelationGroup> = emptyList(),
             val isLoadingRelatedAnime: Boolean = false,
+            val genreRecommendations: RelatedMangaState = RelatedMangaState.Loading,
             val isRefreshingData: Boolean = false,
             val dialog: Dialog? = null,
             val hasPromptedToAddBefore: Boolean = false,

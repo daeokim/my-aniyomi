@@ -10,6 +10,9 @@ enum class CatalogTab(val label: String) { POPULAR("인기"), LATEST("최신"), 
 data class CatalogRequest(val tab: CatalogTab, val weekday: Int, val filters: String, val search: String = "")
 
 data class CatalogCapability(val weekday: Boolean, val completed: Boolean, val latest: Boolean) {
+    /** Personal fork: weekday lists are offered for Naver Webtoon only. */
+    fun forSource(sourceId: Long, naverId: Long) = if (sourceId == naverId) this else copy(weekday = false)
+
     fun supports(tab: CatalogTab) = when (tab) {
         CatalogTab.POPULAR -> true
         CatalogTab.LATEST -> latest

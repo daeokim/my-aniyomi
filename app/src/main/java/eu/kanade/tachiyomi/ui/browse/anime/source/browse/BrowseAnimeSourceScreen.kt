@@ -181,7 +181,7 @@ data class BrowseAnimeSourceScreen(
                 revision = screenModel.catalogRevision,
                 filterKey = screenModel.catalogSignature,
                 searchQuery = screenModel.catalogSearchQuery,
-                capability = screenModel.catalogCapability,
+                capability = screenModel.catalogCapability.copy(weekday = false), // Weekday lists are Naver Webtoon only.
                 sortAllowed = screenModel::catalogSortAllowed,
                 onTab = screenModel::selectCatalogTab,
                 onDay = screenModel::selectCatalogDay,

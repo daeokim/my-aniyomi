@@ -16,6 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 CODE = (ROOT / 'app/src/main/java/eu/kanade/tachiyomi/data/recommendations/RelatedMangaRepository.kt').read_text()
 FIELDS = re.search(r'const val FIELDS = "(.*?)"', CODE).group(1)
 MIN_SAME_COUNTRY_FILL = int(re.search(r'MIN_SAME_COUNTRY_FILL = (\d+)', CODE).group(1))
+MIN_THEMED = int(re.search(r'MIN_THEMED = (\d+)', CODE).group(1))
+MIN_TAG_RANK = int(re.search(r'MIN_TAG_RANK = (\d+)', CODE).group(1))
+
+
+def themes(m):
+    return {t['name'].lower() for t in m.get('tags') or [] if not t.get('isMediaSpoiler') and t.get('rank', 0) >= MIN_TAG_RANK}
 
 
 def query(name):
@@ -66,10 +72,10 @@ def recommend(title):
     if len(exact) != 1:
         return f'사용자 선택 필요 (정확히 일치 {len(exact)}개, 후보: {", ".join(label(m) for m in candidates[:3]) or "없음"})', []
     seed = post(RELATED, {'id': exact[0]['id']})['Media']
-    genres, country = set(seed['genres']), seed.get('countryOfOrigin')
+    genres, country, seed_themes = set(seed['genres']), seed.get('countryOfOrigin'), themes(seed)
     eligible = lambda m: m['id'] != seed['id'] and comic(m) and not m.get('isAdult') and genres & set(m['genres'])
     nodes = sorted(seed['recommendations']['nodes'], key=lambda n: -n['rating'])
-    items = [n['mediaRecommendation'] for n in nodes if n.get('mediaRecommendation') and eligible(n['mediaRecommendation'])]
+    items = [dict(n['mediaRecommendation'], direct=True) for n in nodes if n.get('mediaRecommendation') and eligible(n['mediaRecommendation'])]
     source = f'직접 추천 {len(items)}개'
     if len(items) < 3:
         local = []
@@ -81,12 +87,17 @@ def recommend(title):
             extra = [m for m in post(GENRE, {'id': seed['id'], 'genres': seed['genres']})['Page']['media'] if eligible(m)]
             source += f' + 전체 장르 {len(extra)}개'
             items += extra
+    unique = list({m['id']: m for m in reversed(items)}.values())[::-1]
+    if seed_themes and sum(1 for m in unique if seed_themes & themes(m)) >= MIN_THEMED:
+        unique = [m for m in unique if m.get('direct') or seed_themes & themes(m)]
+        source += ' · 공통 주제 없는 장르 보충 제외'
     seen, ranked = set(), []
-    for m in sorted(items, key=lambda m: (bool(country) and m.get('countryOfOrigin') != country, -len(genres & set(m['genres'])))):
+    for m in sorted(unique, key=lambda m: (bool(country) and m.get('countryOfOrigin') != country, -len(seed_themes & themes(m)), -len(genres & set(m['genres'])))):
         if m['id'] not in seen:
             seen.add(m['id'])
             ranked.append(m)
-    return f"{label(seed)} · 장르 {', '.join(sorted(genres))} · {source}", ranked[:18]
+    shown = ', '.join(sorted(seed_themes)[:6]) or '없음'
+    return f"{label(seed)} · 장르 {', '.join(sorted(genres))} · 주제 {shown} · {source}", ranked[:18]
 
 
 def annotate(title, lines):

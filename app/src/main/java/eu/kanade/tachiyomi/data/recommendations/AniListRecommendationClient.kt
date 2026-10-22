@@ -14,8 +14,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-internal fun createRelatedMangaRepository() = RelatedMangaRepository(
+internal fun createRelatedMangaRepository(anime: Boolean = false) = RelatedMangaRepository(
     enabled = { Injekt.get<eu.kanade.tachiyomi.network.NetworkPreferences>().externalRecommendations().get() },
+    anime = anime,
 )
 
 private val recommendationClient by lazy {

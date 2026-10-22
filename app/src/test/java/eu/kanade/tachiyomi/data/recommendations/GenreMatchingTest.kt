@@ -41,4 +41,9 @@ class GenreMatchingTest {
         assertEquals(listOf(1, 2), GenreMatching.rank(setOf("action", "fantasy"), listOf(jp, kr), "KR").map { it.id })
         assertEquals(listOf(2, 1), GenreMatching.rank(setOf("action", "fantasy"), listOf(jp, kr)).map { it.id })
     }
+    @Test fun `a shared theme tag outranks broader genre overlap`() {
+        val themed = card(1, "Action").copy(commonTags = setOf("martial arts"))
+        val broad = card(2, "Action", "Fantasy")
+        assertEquals(listOf(1, 2), GenreMatching.rank(setOf("action", "fantasy"), listOf(broad, themed)).map { it.id })
+    }
 }

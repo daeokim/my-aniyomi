@@ -2,10 +2,12 @@ package eu.kanade.presentation.browse.catalog
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material3.*
@@ -79,8 +81,8 @@ fun <T : Any> SourceCatalog(
                 HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { CatalogTab.entries[it].name }) { page ->
                     val tab = CatalogTab.entries[page]
                     Column(Modifier.fillMaxSize()) {
-                        if (tab == CatalogTab.WEEKDAY) {
-                            FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (tab == CatalogTab.WEEKDAY && capability.supports(tab)) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, label ->
                                     FilterChip(selected = day == i + 1, onClick = { day = i + 1; onDay(day); showFilter = true }, label = { Text(label) })
                                 }

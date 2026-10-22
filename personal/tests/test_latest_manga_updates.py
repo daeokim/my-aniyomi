@@ -164,6 +164,13 @@ class LatestMangaUpdatesTest(unittest.TestCase):
         self.assertEqual([20], self.ids())
         self.assertEqual([], self.ids(after=300))
 
+    def test_naver_shows_the_last_release_of_a_recently_added_work(self):
+        # Dtoon9.4: yesterday's Naver episode appears under its release date even if the work was added today.
+        self.add_manga(2, source=self.NAVER, date_added=500)
+        self.chapter(20, 0, manga_id=2, fetched=500, uploaded=300, name="7 - 열림")
+        self.assertEqual([20], self.ids())
+        self.assertEqual([], self.ids(after=300))
+
     def test_other_sources_still_need_discovery_after_registration(self):
         self.chapter(1, 0, fetched=5, uploaded=300)
         self.assertEqual([], self.ids())
