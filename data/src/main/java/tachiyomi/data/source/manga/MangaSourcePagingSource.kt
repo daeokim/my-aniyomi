@@ -1,12 +1,12 @@
 package tachiyomi.data.source.manga
 
 import androidx.paging.PagingState
+import kotlinx.coroutines.CancellationException
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.SManga
 import tachiyomi.core.common.util.lang.withIOContext
-import tachiyomi.domain.items.chapter.model.NoChaptersException
 import tachiyomi.domain.source.manga.repository.SourcePagingSourceType
 
 class SourceSearchPagingSource(
@@ -46,9 +46,9 @@ abstract class SourcePagingSource(
         val mangasPage = try {
             withIOContext {
                 requestNextPage(page.toInt())
-                    .takeIf { it.mangas.isNotEmpty() }
-                    ?: throw NoChaptersException()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return LoadResult.Error(e)
         }
@@ -60,10 +60,7 @@ abstract class SourcePagingSource(
         )
     }
 
-    override fun getRefreshKey(state: PagingState<Long, SManga>): Long? {
-        return state.anchorPosition?.let { anchorPosition ->
-            val anchorPage = state.closestPageToPosition(anchorPosition)
-            anchorPage?.prevKey ?: anchorPage?.nextKey
-        }
-    }
+    // There is no prepend path for these source APIs. Restart at page one so refresh never
+    // silently drops all search matches before the current scroll position.
+    override fun getRefreshKey(state: PagingState<Long, SManga>): Long? = null
 }

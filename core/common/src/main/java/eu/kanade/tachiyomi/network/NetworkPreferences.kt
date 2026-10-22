@@ -12,6 +12,8 @@ class NetworkPreferences(
         return preferenceStore.getBoolean("verbose_logging", verboseLogging)
     }
 
+    fun externalRecommendations(): Preference<Boolean> = preferenceStore.getBoolean("external_recommendations", true)
+
     fun dohProvider(): Preference<Int> {
         return preferenceStore.getInt("doh_provider", -1)
     }

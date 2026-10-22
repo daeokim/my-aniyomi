@@ -19,6 +19,15 @@ data class CatalogCapability(val weekday: Boolean, val completed: Boolean, val l
 }
 
 object CatalogPolicy {
+    fun isSort(name: String) = name.trim().lowercase() in setOf("정렬", "정렬순", "정렬 기준", "sort", "order")
+    fun sortNames(tab: CatalogTab) = when (tab) {
+        CatalogTab.POPULAR -> setOf("인기순", "인기", "조회순", "조회수순", "popular", "popularity", "views")
+        CatalogTab.LATEST -> setOf("최신순", "최신", "업데이트순", "최근 업데이트순", "latest", "updated", "recently updated")
+        else -> emptySet()
+    }
+    fun sortCombinationAllowed(tab: CatalogTab, native: Boolean, searchSort: Boolean) =
+        tab !in setOf(CatalogTab.POPULAR, CatalogTab.LATEST) || native || searchSort
+
     fun today() = LocalDate.now(ZoneId.of("Asia/Seoul")).dayOfWeek.value
     fun dayIndex(values: List<String>, day: Int): Int = values.indexOfFirst { value ->
         val text = value.trim().lowercase()

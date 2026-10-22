@@ -18,20 +18,22 @@ SELECT
     episodes.date_fetch AS datefetch
 FROM animes JOIN episodes
 ON animes._id = episodes.anime_id
-WHERE favorite = 1
-AND date_fetch > date_added
+LEFT JOIN animes AS parent ON animes.parent_id = parent._id
+WHERE (animes.favorite = 1 AND episodes.date_fetch > animes.date_added)
+OR (animes.favorite = 0 AND parent.favorite = 1 AND episodes.date_fetch > parent.date_added)
 ORDER BY date_fetch DESC;
 
 getRecentAnimeUpdates:
 SELECT *
 FROM animeupdatesView
-WHERE dateUpload > :after
+WHERE datefetch > :after
+ORDER BY datefetch DESC, episodeId DESC
 LIMIT :limit;
 
 getUpdatesBySeenStatus:
 SELECT *
 FROM animeupdatesView
 WHERE seen = :seen
-AND dateUpload > :after
+AND datefetch > :after
 
 LIMIT :limit;

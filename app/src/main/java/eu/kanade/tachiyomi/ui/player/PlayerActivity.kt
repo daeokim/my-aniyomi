@@ -45,6 +45,7 @@ import android.view.View
 import android.view.WindowManager
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.repeatOnLifecycle
+import eu.kanade.tachiyomi.util.system.stableConnectionChanges
 import androidx.activity.viewModels
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.boundsInWindow
@@ -235,6 +236,11 @@ class PlayerActivity : BaseActivity() {
         enableEdgeToEdge()
         registerSecureActivity(this)
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                stableConnectionChanges().collect { viewModel.retryStreamAfterConnectionChange() }
+            }
+        }
         setContentView(binding.root)
         installFoldPostureLayout()
 

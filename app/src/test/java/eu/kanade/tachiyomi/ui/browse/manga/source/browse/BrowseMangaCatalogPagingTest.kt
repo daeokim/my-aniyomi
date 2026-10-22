@@ -124,7 +124,7 @@ class BrowseMangaCatalogPagingTest {
         }
     }
 
-    private fun model(): BrowseMangaSourceScreenModel {
+    private fun model(hideInLibrary: Boolean = false, favorite: Boolean = false): BrowseMangaSourceScreenModel {
         val source = mockk<CatalogueSource> {
             every { id } returns 1L
             every { getFilterList() } answers { filters() }
@@ -132,7 +132,7 @@ class BrowseMangaCatalogPagingTest {
         val manager = mockk<MangaSourceManager> { every { getOrStub(1L) } returns source }
         val preferences = mockk<SourcePreferences> {
             every { sourceDisplayMode() } returns preference(LibraryDisplayMode.default)
-            every { hideInMangaLibraryItems() } returns preference(false)
+            every { hideInMangaLibraryItems() } returns preference(hideInLibrary)
         }
         val repository = mockk<MangaSourceRepository> {
             every { getPopularManga(1L) } answers { page("popular") }
@@ -148,7 +148,7 @@ class BrowseMangaCatalogPagingTest {
         val getManga = mockk<GetManga> {
             every { subscribe(any<String>(), 1L) } answers {
                 val title = firstArg<String>()
-                flowOf(Manga.create().copy(id = 1L, source = 1L, title = title, url = title))
+                flowOf(Manga.create().copy(id = 1L, source = 1L, title = title, url = title, favorite = favorite))
             }
         }
         val networkToLocal = mockk<NetworkToLocalManga> {
@@ -222,6 +222,16 @@ class BrowseMangaCatalogPagingTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `search includes library matches even when the ordinary catalogue hides them`() = runTest(dispatcher) {
+        val model = model(hideInLibrary = true, favorite = true)
+        assertTrue(collect(model.catalogItems(CatalogTab.POPULAR, 1)).snapshot().items.isEmpty())
+        model.search("hit")
+        assertEquals(listOf("hit"), collect(model.catalogItems(CatalogTab.POPULAR, 1)).snapshot().items.map { it.value.title })
+        model.setToolbarQuery(null)
+        assertTrue(collect(model.catalogItems(CatalogTab.POPULAR, 1)).snapshot().items.isEmpty())
     }
 
     @Test

@@ -51,7 +51,7 @@ class GlobalAnimeSearchScreen(
                 when (val result = state.items.values.singleOrNull()) {
                     AnimeSearchItemResult.Loading -> return@LaunchedEffect
                     is AnimeSearchItemResult.Success -> {
-                        val anime = result.result.singleOrNull()
+                        val anime = result.singleCompleteResult
                         if (anime != null) {
                             navigator.replace(AnimeScreen(anime.id, true))
                         } else {

@@ -537,8 +537,8 @@ class MangaDownloader(
             emit(file)
         }
             // Retry 3 times, waiting 2, 4 and 8 seconds between attempts.
-            .retryWhen { _, attempt ->
-                if (attempt < 3) {
+            .retryWhen { error, attempt ->
+                if (attempt < 3 && eu.kanade.tachiyomi.util.system.ConnectionRecovery.isTransient(error)) {
                     delay((2L shl attempt.toInt()) * 1000)
                     true
                 } else {

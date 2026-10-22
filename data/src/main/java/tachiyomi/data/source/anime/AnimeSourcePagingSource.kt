@@ -1,12 +1,12 @@
 package tachiyomi.data.source.anime
 
 import androidx.paging.PagingState
+import kotlinx.coroutines.CancellationException
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import tachiyomi.core.common.util.lang.withIOContext
-import tachiyomi.domain.items.episode.model.NoEpisodesException
 import tachiyomi.domain.source.anime.repository.AnimeSourcePagingSourceType
 
 class AnimeSourceSearchPagingSource(
@@ -43,9 +43,9 @@ abstract class AnimeSourcePagingSource(
         val animesPage = try {
             withIOContext {
                 requestNextPage(page.toInt())
-                    .takeIf { it.animes.isNotEmpty() }
-                    ?: throw NoEpisodesException()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return LoadResult.Error(e)
         }
@@ -57,10 +57,7 @@ abstract class AnimeSourcePagingSource(
         )
     }
 
-    override fun getRefreshKey(state: PagingState<Long, SAnime>): Long? {
-        return state.anchorPosition?.let { anchorPosition ->
-            val anchorPage = state.closestPageToPosition(anchorPosition)
-            anchorPage?.prevKey ?: anchorPage?.nextKey
-        }
-    }
+    // There is no prepend path for these source APIs. Restart at page one so refresh never
+    // silently drops all search matches before the current scroll position.
+    override fun getRefreshKey(state: PagingState<Long, SAnime>): Long? = null
 }

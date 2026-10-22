@@ -97,16 +97,23 @@ class BrowseAnimeSourceScreenModel(
         private set
     var catalogDay by mutableStateOf(PersonalStore.number("catalog_day:anime:$sourceId", CatalogPolicy.today()).get())
         private set
-    val catalogSignature get() = PersonalStore.key(AnimeCatalogFilters.snapshot(state.value.filters) + (state.value.listing as? Listing.Search)?.query.orEmpty())
+    val catalogSearchQuery get() = (state.value.listing as? Listing.Search)?.query.orEmpty()
+    val catalogSignature get() = PersonalStore.key(state.value.catalogFiltersSnapshot + (state.value.listing as? Listing.Search)?.query.orEmpty())
     private var catalogScope = kotlinx.coroutines.CoroutineScope(screenModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(screenModelScope.coroutineContext[kotlinx.coroutines.Job]))
     private var catalogContext: Pair<String, String>? = null
     private val catalogFlows = linkedMapOf<CatalogRequest, Flow<PagingData<StateFlow<Anime>>>>()
     val catalogCapability get() = AnimeCatalogFilters.capabilities(source.getFilterList(), source.supportsLatest)
+    fun catalogSortAllowed(tab: CatalogTab): Boolean {
+        val filters = source.getFilterList()
+        val native = (state.value.listing as? Listing.Search)?.query.isNullOrBlank() &&
+            state.value.catalogFiltersSnapshot == AnimeCatalogFilters.snapshot(filters)
+        return CatalogPolicy.sortCombinationAllowed(tab, native, AnimeCatalogFilters.supportsSort(filters, tab))
+    }
     fun selectCatalogTab(tab: Int) { catalogTab = tab; PersonalStore.number("catalog_tab:anime:$sourceId").set(tab) }
     fun selectCatalogDay(day: Int) { catalogDay = day; PersonalStore.number("catalog_day:anime:$sourceId").set(day) }
     fun catalogItems(tab: CatalogTab, day: Int): Flow<PagingData<StateFlow<Anime>>> {
         val query = (state.value.listing as? Listing.Search)?.query.orEmpty()
-        val snapshot = AnimeCatalogFilters.snapshot(state.value.filters)
+        val snapshot = state.value.catalogFiltersSnapshot
         val request = CatalogRequest(tab, if (tab == CatalogTab.WEEKDAY) day else 0, snapshot, query)
         val context = snapshot to query
         if (catalogContext != context) {
@@ -131,7 +138,7 @@ class BrowseAnimeSourceScreenModel(
                 data.map { remote ->
                     val local = catalogMutex.withLock { networkToLocalAnime.await(remote.toDomainAnime(sourceId)) }
                     getAnime.subscribe(local.url, local.source).filterNotNull().stateIn(scope)
-                }.filter { !hideInLibraryItems || !it.value.favorite }
+                }.filter { query.isNotBlank() || !hideInLibraryItems || !it.value.favorite }
             }.cachedIn(scope)
         }
     }
@@ -146,9 +153,11 @@ class BrowseAnimeSourceScreenModel(
                 listing = Listing.Search(query, source.getFilterList())
             }
 
+            val restoredFilters = AnimeCatalogFilters.restore(source.getFilterList(), PersonalStore.text("catalog_filters:anime:$sourceId").get())
             it.copy(
                 listing = listing,
-                filters = AnimeCatalogFilters.restore(source.getFilterList(), PersonalStore.text("catalog_filters:anime:$sourceId").get()),
+                filters = restoredFilters,
+                catalogFiltersSnapshot = AnimeCatalogFilters.snapshot(restoredFilters),
                 toolbarQuery = query,
             )
         }
@@ -230,6 +239,7 @@ class BrowseAnimeSourceScreenModel(
                     filters = filters ?: input.filters,
                 ),
                 toolbarQuery = query ?: input.query,
+                catalogFiltersSnapshot = filters?.let(AnimeCatalogFilters::snapshot) ?: it.catalogFiltersSnapshot,
             )
         }
     }
@@ -271,6 +281,7 @@ class BrowseAnimeSourceScreenModel(
             }
             it.copy(
                 filters = defaultFilters,
+                catalogFiltersSnapshot = AnimeCatalogFilters.snapshot(defaultFilters),
                 listing = listing,
                 toolbarQuery = listing.query,
             )
@@ -376,7 +387,7 @@ class BrowseAnimeSourceScreenModel(
     }
 
     fun setToolbarQuery(query: String?) {
-        mutableState.update { it.copy(toolbarQuery = query) }
+        mutableState.update { it.withToolbarQuery(query) }
     }
 
     sealed class Listing(open val query: String?, open val filters: AnimeFilterList) {
@@ -421,7 +432,12 @@ class BrowseAnimeSourceScreenModel(
         val filters: AnimeFilterList = AnimeFilterList(),
         val toolbarQuery: String? = null,
         val dialog: Dialog? = null,
+        val catalogFiltersSnapshot: String = "",
     ) {
         val isUserQuery get() = listing is Listing.Search && !listing.query.isNullOrEmpty()
+        fun withToolbarQuery(query: String?): State {
+            val nextListing = if (query.isNullOrEmpty() && listing is Listing.Search && listing.query != null) listing.copy(query = null) else listing
+            return if (nextListing === listing && toolbarQuery == query) this else copy(listing = nextListing, toolbarQuery = query)
+        }
     }
 }

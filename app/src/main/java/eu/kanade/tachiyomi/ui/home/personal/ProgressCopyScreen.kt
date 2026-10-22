@@ -8,7 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.data.personal.PersonalStore
+import eu.kanade.tachiyomi.data.personal.EpisodeMapping
+import eu.kanade.tachiyomi.data.personal.EpisodeMappingStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import tachiyomi.domain.items.chapter.repository.ChapterRepository
@@ -25,6 +26,8 @@ data class ProgressCopyScreen(val fromId: Long, val toId: Long, val manga: Boole
         val scope = rememberCoroutineScope()
         var source by remember { mutableStateOf<List<Row>>(emptyList()) }
         var target by remember { mutableStateOf<List<Row>>(emptyList()) }
+        var fromWork by remember { mutableStateOf<EpisodeMapping.Work?>(null) }
+        var toWork by remember { mutableStateOf<EpisodeMapping.Work?>(null) }
         val matches = remember { mutableStateMapOf<Long, Long>() }
         var choosing by remember { mutableStateOf<Row?>(null) }
         var message by remember { mutableStateOf("회차를 불러오는 중…") }
@@ -41,8 +44,21 @@ data class ProgressCopyScreen(val fromId: Long, val toId: Long, val manga: Boole
                     source = repo.getEpisodeByAnimeId(fromId).filter { it.seen || it.bookmark }.map { Row(it.id, it.name, it.url, it.seen, it.bookmark) }
                     target = repo.getEpisodeByAnimeId(toId).map { Row(it.id, it.name, it.url, it.seen, it.bookmark) }
                 }
+                if (manga) {
+                    val get = Injekt.get<tachiyomi.domain.entries.manga.interactor.GetManga>()
+                    val from = get.await(fromId) ?: error("Source work unavailable")
+                    val to = get.await(toId) ?: error("Target work unavailable")
+                    fromWork = EpisodeMapping.Work(true, fromId, from.source, from.url, source.map { it.url })
+                    toWork = EpisodeMapping.Work(true, toId, to.source, to.url, target.map { it.url })
+                } else {
+                    val get = Injekt.get<tachiyomi.domain.entries.anime.interactor.GetAnime>()
+                    val from = get.await(fromId) ?: error("Source work unavailable")
+                    val to = get.await(toId) ?: error("Target work unavailable")
+                    fromWork = EpisodeMapping.Work(false, fromId, from.source, from.url, source.map { it.url })
+                    toWork = EpisodeMapping.Work(false, toId, to.source, to.url, target.map { it.url })
+                }
                 source.forEach { row ->
-                    val url = PersonalStore.text("episode_map:${PersonalStore.key("$manga:$fromId:$toId:${row.url}")}").get()
+                    val url = EpisodeMappingStore.read(requireNotNull(fromWork), requireNotNull(toWork), row.url)
                     target.singleOrNull { it.url == url }?.takeIf { it.id !in matches.values }?.let { matches[row.id] = it.id }
                 }
                 message = when { target.isEmpty() -> "대상 작품의 상세 화면에서 회차 목록을 먼저 불러와 주세요."; source.isEmpty() -> "복사할 완료·북마크 기록이 없습니다."; else -> "회차 제목을 확인해 직접 대응시키세요. 완료·북마크만 합치며 원본 기록은 유지합니다. 페이지·재생 위치·시청 기록은 길이가 다를 수 있어 복사하지 않습니다." }
@@ -81,7 +97,7 @@ data class ProgressCopyScreen(val fromId: Long, val toId: Long, val manga: Boole
                             require(updates.size == matches.size) { "회차 목록이 변경되었습니다." }
                             repo.updateAllEpisodes(updates)
                         }
-                        source.forEach { row -> matches[row.id]?.let { id -> target.find { it.id == id }?.let { other -> PersonalStore.text("episode_map:${PersonalStore.key("$manga:$fromId:$toId:${row.url}")}").set(other.url) } } }
+                        source.forEach { row -> matches[row.id]?.let { id -> target.find { it.id == id }?.let { other -> EpisodeMappingStore.save(requireNotNull(fromWork), requireNotNull(toWork), row.url, other.url) } } }
                         message = "${matches.size}개 회차의 완료·북마크를 복사했습니다."
                     } catch (e: CancellationException) { throw e }
                     catch (_: Exception) { message = "복사하지 못했습니다. 회차 목록을 확인하고 다시 시도하세요." }

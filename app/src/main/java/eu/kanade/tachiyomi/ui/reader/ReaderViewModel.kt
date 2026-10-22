@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader
 
 import android.app.Application
 import android.net.Uri
+import eu.kanade.tachiyomi.util.system.stableConnectionChanges
 import androidx.annotation.IntRange
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
@@ -45,6 +46,7 @@ import eu.kanade.tachiyomi.util.storage.cacheImageDir
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -139,6 +141,16 @@ class ReaderViewModel @JvmOverloads constructor(
      * The chapter loader for the loaded manga. It'll be null until [manga] is set.
      */
     private var loader: ChapterLoader? = null
+    private val visiblePage = MutableStateFlow<ReaderPage?>(null)
+
+    /** The reader activity controls this collector's lifecycle. Never reopen the chapter. */
+    suspend fun recoverVisiblePageOnConnectionChanges(context: android.content.Context) {
+        context.stableConnectionChanges().collect {
+            val page = visiblePage.value ?: return@collect
+            if (page.chapter != getCurrentChapter() || page.status != Page.State.ERROR) return@collect
+            if (page.connectionRetry.claim(page.connectionError, busy = false)) page.chapter.pageLoader?.retryPage(page)
+        }
+    }
 
     /**
      * The time the chapter was started reading
@@ -438,6 +450,7 @@ class ReaderViewModel @JvmOverloads constructor(
             return
         }
 
+        visiblePage.value = page
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
 

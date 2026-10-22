@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.library.anime
 
 import android.content.Context
+import eu.kanade.tachiyomi.data.library.LibraryUpdatePolicy
 import android.content.pm.ServiceInfo
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -55,10 +56,6 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_CHARGING
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_NETWORK_NOT_METERED
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_ONLY_ON_WIFI
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_HAS_UNVIEWED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_NON_COMPLETED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_NON_VIEWED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_OUTSIDE_RELEASE_PERIOD
 import tachiyomi.domain.source.anime.model.AnimeSourceNotInstalledException
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.i18n.MR
@@ -89,6 +86,8 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
     private val notifier = AnimeLibraryUpdateNotifier(context)
 
     private var animeToUpdate: List<LibraryAnime> = mutableListOf()
+
+    private val manualUpdate get() = tags.contains(WORK_NAME_MANUAL)
 
     override suspend fun doWork(): Result {
         if (tags.contains(WORK_NAME_AUTO)) {
@@ -152,29 +151,14 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
     private suspend fun addAnimeToQueue(categoryId: Long) {
         val libraryAnime = getLibraryAnime.await()
 
-        val listToUpdate = if (categoryId != -1L) {
-            libraryAnime.filter { it.category == categoryId }
-        } else {
-            val categoriesToUpdate = libraryPreferences.animeUpdateCategories().get().map { it.toLong() }
-            val includedAnime = if (categoriesToUpdate.isNotEmpty()) {
-                libraryAnime.filter { it.category in categoriesToUpdate }
-            } else {
-                libraryAnime
-            }
+        val listToUpdate = LibraryUpdatePolicy.categories(
+            libraryAnime, manualUpdate, categoryId,
+            libraryPreferences.animeUpdateCategories().get().map { it.toLong() }.toSet(),
+            libraryPreferences.animeUpdateCategoriesExclude().get().map { it.toLong() }.toSet(),
+            id = { it.anime.id }, categoryId = { it.category },
+        )
 
-            val categoriesToExclude = libraryPreferences.animeUpdateCategoriesExclude().get().map { it.toLong() }
-            val excludedAnimeIds = if (categoriesToExclude.isNotEmpty()) {
-                libraryAnime.filter { it.category in categoriesToExclude }.map { it.anime.id }
-            } else {
-                emptyList()
-            }
-
-            includedAnime
-                .filterNot { it.anime.id in excludedAnimeIds }
-                .distinctBy { it.anime.id }
-        }
-
-        val includeSeasons = libraryPreferences.updateSeasonOnLibraryUpdate().get()
+        val includeSeasons = manualUpdate || libraryPreferences.updateSeasonOnLibraryUpdate().get()
         val lastToUpdateWithSeasons = listToUpdate.flatMap { libAnime ->
             when (libAnime.anime.fetchType) {
                 FetchType.Seasons -> {
@@ -182,7 +166,7 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
                         val seasons = getAnimeSeasonsByParentId.await(libAnime.anime.id)
                         seasons
                             .filter { s ->
-                                s.anime.fetchType == FetchType.Episodes && !s.anime.favorite
+                                s.anime.fetchType == FetchType.Episodes && (!s.anime.favorite || manualUpdate)
                             }
                             .map { it.toLibraryAnime() }
                     } else {
@@ -198,44 +182,25 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
         val (_, fetchWindowUpperBound) = animeFetchInterval.getWindow(ZonedDateTime.now())
 
         animeToUpdate = lastToUpdateWithSeasons
-            .filter {
-                when {
-                    it.anime.updateStrategy != AnimeUpdateStrategy.ALWAYS_UPDATE -> {
-                        skippedUpdates.add(
-                            it.anime to context.stringResource(MR.strings.skipped_reason_not_always_update),
-                        )
-                        false
+            .distinctBy { it.anime.id }
+            .filter { entry ->
+                val reason = LibraryUpdatePolicy.skip(
+                    manual = manualUpdate, alwaysUpdate = entry.anime.updateStrategy == AnimeUpdateStrategy.ALWAYS_UPDATE,
+                    completed = entry.anime.status.toInt() == SAnime.COMPLETED,
+                    unviewed = entry.unseenCount, total = entry.totalCount, started = entry.hasStarted,
+                    nextUpdate = entry.anime.nextUpdate, windowEnd = fetchWindowUpperBound, restrictions = restrictions,
+                )
+                if (reason != null) {
+                    val message = when (reason) {
+                        LibraryUpdatePolicy.Skip.SOURCE -> MR.strings.skipped_reason_not_always_update
+                        LibraryUpdatePolicy.Skip.COMPLETED -> MR.strings.skipped_reason_completed
+                        LibraryUpdatePolicy.Skip.UNVIEWED -> MR.strings.skipped_reason_not_caught_up
+                        LibraryUpdatePolicy.Skip.NOT_STARTED -> MR.strings.skipped_reason_not_started
+                        LibraryUpdatePolicy.Skip.RELEASE_PERIOD -> MR.strings.skipped_reason_not_in_release_period
                     }
-
-                    ENTRY_NON_COMPLETED in restrictions && it.anime.status.toInt() == SAnime.COMPLETED -> {
-                        skippedUpdates.add(
-                            it.anime to context.stringResource(MR.strings.skipped_reason_completed),
-                        )
-                        false
-                    }
-
-                    ENTRY_HAS_UNVIEWED in restrictions && it.unseenCount != 0L -> {
-                        skippedUpdates.add(
-                            it.anime to context.stringResource(MR.strings.skipped_reason_not_caught_up),
-                        )
-                        false
-                    }
-
-                    ENTRY_NON_VIEWED in restrictions && it.totalCount > 0L && !it.hasStarted -> {
-                        skippedUpdates.add(
-                            it.anime to context.stringResource(MR.strings.skipped_reason_not_started),
-                        )
-                        false
-                    }
-
-                    ENTRY_OUTSIDE_RELEASE_PERIOD in restrictions && it.anime.nextUpdate > fetchWindowUpperBound -> {
-                        skippedUpdates.add(
-                            it.anime to context.stringResource(MR.strings.skipped_reason_not_in_release_period),
-                        )
-                        false
-                    }
-                    else -> true
+                    skippedUpdates.add(entry.anime to context.stringResource(message))
                 }
+                reason == null
             }
             .sortedBy { it.anime.title }
 
@@ -364,11 +329,13 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
             anime = anime,
             fetchDetails = libraryPreferences.autoUpdateMetadata().get(),
             fetchEpisodes = true,
+            manualFetch = manualUpdate,
             fetchWindow = fetchWindow,
         )
             .getOrThrow()
 
-        return if (update.anime.favorite) update.newEpisodes else emptyList()
+        val inLibrary = update.anime.favorite || update.anime.parentId?.let { getAnime.await(it)?.favorite } == true
+        return if (inLibrary) update.newEpisodes else emptyList()
     }
 
     private suspend fun withUpdateNotification(

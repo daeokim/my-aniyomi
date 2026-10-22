@@ -52,8 +52,19 @@ object AnimeCatalogFilters {
         },
         latest = latest,
     )
+    fun supportsSort(filters: AnimeFilterList, tab: CatalogTab): Boolean {
+        val names = CatalogPolicy.sortNames(tab)
+        return flatten(filters).any { (_, f) ->
+            when (f) {
+                is AnimeFilter.Select<*> -> CatalogPolicy.isSort(f.name) && f.values.any { it.toString().trim().lowercase() in names }
+                is AnimeFilter.Sort -> f.values.any { it.trim().lowercase() in names }
+                else -> false
+            }
+        }
+    }
     fun apply(filters: AnimeFilterList, request: CatalogRequest): AnimeFilterList {
         restore(filters, request.filters)
+        if (request.search.isNotBlank()) return filters // Search uses explicit filters, not the selected catalogue tab.
         flatten(filters).forEach { (_, f) ->
             val sortNames = when (request.tab) {
                 CatalogTab.POPULAR -> setOf("인기순", "인기", "조회순", "조회수순", "popular", "popularity", "views")
