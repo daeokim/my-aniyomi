@@ -36,4 +36,17 @@ class LibraryUpdatePolicyTest {
         assertEquals(LibraryUpdatePolicy.Skip.SOURCE, LibraryUpdatePolicy.skip(true, false, false, 0, 0, false, 0, 100, emptySet()))
         assertNull(LibraryUpdatePolicy.skip(false, true, true, 50, 50, false, 999, 100, emptySet()))
     }
+    @Test fun `new chapters on a known entry stay after now in source order`() {
+        assertEquals(listOf(1003L, 1002L, 1001L), LibraryUpdatePolicy.fetchDates(3, now = 1000, dateAdded = 500, firstLibrarySync = false))
+    }
+    @Test fun `first library sync backdates the backlog before the library date`() {
+        val dates = LibraryUpdatePolicy.fetchDates(3, now = 1000, dateAdded = 900, firstLibrarySync = true)
+        assertEquals(listOf(899L, 898L, 897L), dates)
+        // updatesView keeps only date_fetch > date_added, so none of the backlog is reported.
+        assertTrue(dates.all { it <= 900 })
+    }
+    @Test fun `first sync never dates items after now even with a future library date`() {
+        assertEquals(listOf(1000L, 999L), LibraryUpdatePolicy.fetchDates(2, now = 1000, dateAdded = 5000, firstLibrarySync = true))
+        assertTrue(LibraryUpdatePolicy.fetchDates(0, now = 1000, dateAdded = 900, firstLibrarySync = true).isEmpty())
+    }
 }

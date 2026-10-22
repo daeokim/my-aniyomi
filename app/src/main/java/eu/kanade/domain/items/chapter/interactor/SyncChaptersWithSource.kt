@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.data.download.manga.MangaDownloadProvider
 import eu.kanade.tachiyomi.source.MangaSource
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.data.library.LibraryUpdatePolicy
 import tachiyomi.data.items.chapter.ChapterSanitizer
 import tachiyomi.domain.entries.manga.model.Manga
 import tachiyomi.domain.items.chapter.interactor.GetChaptersByMangaId
@@ -180,16 +181,18 @@ class SyncChaptersWithSource(
 
         // Date fetch is set in such a way that the upper ones will have bigger value than the lower ones
         // Sources MUST return the chapters from most to less recent, which is common.
-        var itemCount = newChapters.size
-        var updatedToAdd = newChapters.map { toAddItem ->
-            var chapter = toAddItem.copy(dateFetch = nowMillis + itemCount--)
+        // Personal fork: a library entry seen for the first time stores its backlog without reporting it as new.
+        val firstLibrarySync = dbChapters.isEmpty() && manga.favorite && manga.dateAdded > 0
+        val fetchDates = LibraryUpdatePolicy.fetchDates(newChapters.size, nowMillis, manga.dateAdded, firstLibrarySync)
+        var updatedToAdd = newChapters.mapIndexed { index, toAddItem ->
+            var chapter = toAddItem.copy(dateFetch = fetchDates[index])
 
             if (chapter.chapterNumber in readChapterNumbers && markDuplicateAsRead) {
                 changedOrDuplicateReadUrls.add(chapter.url)
                 chapter = chapter.copy(read = true)
             }
 
-            if (!chapter.isRecognizedNumber || chapter.chapterNumber !in deletedChapterNumbers) return@map chapter
+            if (!chapter.isRecognizedNumber || chapter.chapterNumber !in deletedChapterNumbers) return@mapIndexed chapter
 
             chapter = chapter.copy(
                 read = chapter.chapterNumber in deletedReadChapterNumbers,
@@ -224,6 +227,8 @@ class SyncChaptersWithSource(
         // Set this manga as updated since chapters were changed
         // Note that last_update actually represents last time the chapter list changed at all
         updateManga.awaitUpdateLastUpdate(manga.id)
+
+        if (firstLibrarySync) return emptyList()
 
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 

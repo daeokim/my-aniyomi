@@ -23,14 +23,16 @@ object GenreMatching {
 
     fun label(genre: String): String = labels[genre] ?: genre
 
-    fun rank(seed: Set<String>, candidates: List<RelatedManga>): List<RelatedManga> {
+    /** With a known [seedCountry], same-country works come first (they are what installed sources can find). */
+    fun rank(seed: Set<String>, candidates: List<RelatedManga>, seedCountry: String? = null): List<RelatedManga> {
         val groups = candidates.map { it.copy(commonGenres = seed intersect it.genres) }
             .filter { it.commonGenres.isNotEmpty() }
-            .groupBy { it.commonGenres.size to (seed union it.genres).size }
-            .toList().sortedWith { a, b ->
-                val overlap = b.first.first.compareTo(a.first.first)
-                if (overlap != 0) overlap else a.first.second.compareTo(b.first.second)
-            }
+            .groupBy { Triple(seedCountry != null && it.country != seedCountry, it.commonGenres.size, (seed union it.genres).size) }
+            .toList().sortedWith(
+                compareBy<Pair<Triple<Boolean, Int, Int>, List<RelatedManga>>> { it.first.first }
+                    .thenByDescending { it.first.second }
+                    .thenBy { it.first.third },
+            )
         return groups.flatMap { (_, tied) ->
             // Preserve each origin's score order, then deterministically merge the incomparable lists
             // by their next stable ID. This avoids a non-transitive mixed-score comparator.

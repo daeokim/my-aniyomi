@@ -22,7 +22,7 @@ import tachiyomi.domain.source.manga.service.MangaSourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-data class HomeEntry(val id: Long, val title: String, val sourceId: Long, val path: String, val manga: Boolean, val cover: Any?, val at: Long = 0) {
+data class HomeEntry(val id: Long, val title: String, val sourceId: Long, val path: String, val manga: Boolean, val cover: Any?, val at: Long = 0, val progress: Double? = null) {
     val key get() = WorkLinks.key(sourceId, path, manga)
     val kind get() = MediaKinds.forSource(sourceId, manga)
 }
@@ -40,6 +40,11 @@ object HomeRecentPolicy {
     /** Newest history row per work, at most [limit]; rows without a timestamp sort last. */
     fun <H> latest(history: List<H>, workId: (H) -> Long, at: (H) -> Long?, limit: Int = 18): List<H> =
         history.sortedByDescending { at(it) ?: Long.MIN_VALUE }.distinctBy(workId).take(limit)
+
+    /** "12화" / "12.5화" for the last episode seen; sources without recognised numbers show nothing. */
+    fun progressLabel(number: Double?): String? = number?.takeIf { it > 0 }?.let {
+        if (it % 1.0 == 0.0) "${it.toLong()}화" else "${it}화"
+    }
 }
 
 /** Library entries answer most lookups; other works are fetched once and reused across history emissions. */
@@ -121,9 +126,9 @@ class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
                 val animeLibrary = library.filterNot { it.manga }.associate { it.id to WorkIdentity(it.sourceId, it.path) }
                 // History rows already carry title and cover; only source identity is looked up, mostly from the library.
                 val recent = HomeRecentPolicy.latest(ah, { it.animeId }, { it.seenAt?.time }).mapNotNull { h ->
-                    animeIdentities.resolve(h.animeId, animeLibrary)?.let { HomeEntry(h.animeId, h.title, it.source, it.url, false, h.coverData, h.seenAt?.time ?: 0) }
+                    animeIdentities.resolve(h.animeId, animeLibrary)?.let { HomeEntry(h.animeId, h.title, it.source, it.url, false, h.coverData, h.seenAt?.time ?: 0, h.episodeNumber) }
                 } + HomeRecentPolicy.latest(mh, { it.mangaId }, { it.readAt?.time }).mapNotNull { h ->
-                    mangaIdentities.resolve(h.mangaId, mangaLibrary)?.let { HomeEntry(h.mangaId, h.title, it.source, it.url, true, h.coverData, h.readAt?.time ?: 0) }
+                    mangaIdentities.resolve(h.mangaId, mangaLibrary)?.let { HomeEntry(h.mangaId, h.title, it.source, it.url, true, h.coverData, h.readAt?.time ?: 0, h.chapterNumber) }
                 }
                 recent.sortedByDescending { it.at } to library
             }.catch { mutableState.update { it.copy(error = "기록을 불러오지 못했습니다. 기록 탭에서 다시 확인해 주세요.") } }

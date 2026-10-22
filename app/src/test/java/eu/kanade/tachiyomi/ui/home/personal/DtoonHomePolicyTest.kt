@@ -86,4 +86,11 @@ class DtoonHomePolicyTest {
         repeat(2) { assertNull(resolver.resolve(7, emptyMap())) }
         assertEquals(2, calls)
     }
+    @Test fun `continue cards label the last episode number only when it is known`() {
+        assertEquals("12화", HomeRecentPolicy.progressLabel(12.0))
+        assertEquals("12.5화", HomeRecentPolicy.progressLabel(12.5))
+        assertNull(HomeRecentPolicy.progressLabel(-1.0))
+        assertNull(HomeRecentPolicy.progressLabel(0.0))
+        assertNull(HomeRecentPolicy.progressLabel(null))
+    }
 }

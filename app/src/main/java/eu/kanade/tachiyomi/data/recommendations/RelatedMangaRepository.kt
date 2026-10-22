@@ -31,6 +31,7 @@ data class RelatedManga(
     val origin: String = "AniList",
     val score: Int = 0,
     val scoreSource: String = "direct",
+    val country: String? = null,
 )
 
 sealed interface RelatedMangaState {
@@ -117,16 +118,26 @@ class RelatedMangaRepository(
             .mapNotNull { node -> node.mediaRecommendation?.eligibleCard(id, seedGenres)?.copy(score = node.rating) }
             .distinctBy { it.id }
         val all = direct.toMutableList()
+        val country = media.countryOfOrigin?.takeIf { it.isNotBlank() }
         if (direct.size < 3) {
             try {
-                // One bounded request; all seed genres are used again during final validation.
-                val supplements = request(GENRE_QUERY, buildJsonObject {
-                    put("id", id)
-                    put("genres", buildJsonArray { media.genres.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
-                }).Page?.media.orEmpty()
-                supplements.mapIndexedNotNull { index, candidate ->
-                    candidate.eligibleCard(id, seedGenres)?.copy(score = -index, scoreSource = "genre")
-                }.let(all::addAll)
+                // Same-country works first (a Korean webtoon should not be filled with global manga hits);
+                // the unrestricted popularity query only tops up a thin same-country list.
+                if (country != null) {
+                    val local = genreFill(id, media.genres, seedGenres, country, "genre-country")
+                    all += local
+                    if (local.size < MIN_SAME_COUNTRY_FILL) {
+                        try {
+                            all += genreFill(id, media.genres, seedGenres, null, "genre")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            if (all.isEmpty()) throw e
+                        }
+                    }
+                } else {
+                    all += genreFill(id, media.genres, seedGenres, null, "genre")
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -134,10 +145,20 @@ class RelatedMangaRepository(
                 // Keep already validated recommendations when only the supplementary request fails.
             }
         }
-        val cards = GenreMatching.rank(seedGenres, all.distinctBy { it.id }).take(18)
+        val cards = GenreMatching.rank(seedGenres, all.distinctBy { it.id }, country).take(18)
         return if (cards.isEmpty()) RelatedMangaState.NoMatches(seedGenres)
         else RelatedMangaState.Ready(cards, sameGenre = true)
     }
+
+    // One bounded request; all seed genres are used again during final validation.
+    private suspend fun genreFill(id: Int, genres: List<String>, seedGenres: Set<String>, country: String?, origin: String): List<RelatedManga> =
+        request(if (country == null) GENRE_QUERY else GENRE_COUNTRY_QUERY, buildJsonObject {
+            put("id", id)
+            put("genres", buildJsonArray { genres.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
+            if (country != null) put("country", country)
+        }).Page?.media.orEmpty().mapIndexedNotNull { index, candidate ->
+            candidate.eligibleCard(id, seedGenres)?.copy(score = -index, scoreSource = origin)
+        }
 
     private fun Media.eligibleCard(seedId: Int, seedGenres: Set<String>): RelatedManga? {
         if (id == seedId || !isComic(this) || isAdult) return null
@@ -179,9 +200,11 @@ class RelatedMangaRepository(
 
         private fun isComic(media: Media) = media.id > 0 && media.type == "MANGA" && media.format != "NOVEL"
 
-        private const val FIELDS = "id type format isAdult title { english romaji native } synonyms coverImage { large } genres"
+        private const val MIN_SAME_COUNTRY_FILL = 6
+        private const val FIELDS = "id type format isAdult countryOfOrigin title { english romaji native } synonyms coverImage { large } genres"
         internal val SEARCH_QUERY = "query DtoonMatch(\$search: String!) { Page(perPage: 5) { media(search: \$search, type: MANGA, format_not: NOVEL) { $FIELDS } } }"
         internal val RELATED_QUERY = "query DtoonRelated(\$id: Int!) { Media(id: \$id, type: MANGA) { $FIELDS recommendations(perPage: 25, sort: RATING_DESC) { nodes { rating mediaRecommendation { $FIELDS } } } } }"
+        internal val GENRE_COUNTRY_QUERY = "query DtoonGenresByCountry(\$id: Int!, \$genres: [String], \$country: CountryCode) { Page(perPage: 18) { media(type: MANGA, format_not: NOVEL, id_not: \$id, genre_in: \$genres, countryOfOrigin: \$country, isAdult: false, sort: POPULARITY_DESC) { $FIELDS } } }"
         internal val GENRE_QUERY = "query DtoonGenres(\$id: Int!, \$genres: [String]) { Page(perPage: 18) { media(type: MANGA, format_not: NOVEL, id_not: \$id, genre_in: \$genres, isAdult: false, sort: POPULARITY_DESC) { $FIELDS } } }"
     }
 
@@ -207,6 +230,7 @@ class RelatedMangaRepository(
         val type: String? = null,
         val format: String? = null,
         val isAdult: Boolean = false,
+        val countryOfOrigin: String? = null,
         val title: Titles = Titles(),
         val synonyms: List<String> = emptyList(),
         val coverImage: Cover? = null,
@@ -220,7 +244,7 @@ class RelatedMangaRepository(
                 ?: title.english?.takeIf { it.isNotBlank() }
                 ?: title.romaji?.takeIf { it.isNotBlank() }
                 ?: names.firstOrNull() ?: return null
-            return RelatedManga(id, display, coverImage?.large?.takeIf { it.startsWith("https://") }, names)
+            return RelatedManga(id, display, coverImage?.large?.takeIf { it.startsWith("https://") }, names, country = countryOfOrigin)
         }
     }
 }

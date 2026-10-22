@@ -20,13 +20,14 @@ import java.io.IOException
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RelatedMangaRepositoryTest {
-    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false): String = buildJsonObject {
+    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false, country: String? = null): String = buildJsonObject {
         put("id", id); put("type", type); put("format", format); put("isAdult", adult)
+        if (country != null) put("countryOfOrigin", country)
         put("title", buildJsonObject { put("english", title) })
         put("genres", buildJsonArray { genres.forEach { add(JsonPrimitive(it)) } })
     }.toString()
-    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList()): String {
-        val base = Json.parseToJsonElement(media(1, genres)).toString().dropLast(1)
+    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList(), country: String? = null): String {
+        val base = Json.parseToJsonElement(media(1, genres, country = country)).toString().dropLast(1)
         return """{"data":{"Media":$base,"recommendations":{"nodes":[${nodes.joinToString { """{"rating":${it.first},"mediaRecommendation":${it.second}}""" }}]}}}}"""
     }
     private fun page(vararg items: String) = """{"data":{"Page":{"media":[${items.joinToString()}]}}}"""
@@ -187,5 +188,45 @@ class RelatedMangaRepositoryTest {
     @Test fun `title normalization preserves sequel identifiers`() {
         assertEquals("abc2", RelatedMangaRepository.normalizeTitle("ＡＢＣ ２!"))
         assertNotEquals(RelatedMangaRepository.normalizeTitle("Title"), RelatedMangaRepository.normalizeTitle("Title 2"))
+    }
+    @Test fun `a Korean seed fills from Korean works first and skips the global query when enough`() = runTest {
+        val calls = mutableListOf<String>()
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, vars ->
+            calls += query
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR")
+                RelatedMangaRepository.GENRE_COUNTRY_QUERY -> {
+                    assertEquals("KR", vars["country"]!!.jsonPrimitive.content)
+                    page(*(10..15).map { media(it, country = "KR") }.toTypedArray())
+                }
+                else -> fail("The global query is not needed")
+            }
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        assertEquals((10..15).toList(), state.items.map { it.id })
+        assertEquals(listOf(RelatedMangaRepository.RELATED_QUERY, RelatedMangaRepository.GENRE_COUNTRY_QUERY), calls)
+    }
+    @Test fun `a thin Korean list is topped up globally with Korean works ranked first`() = runTest {
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(listOf("Action", "Fantasy"), listOf(9 to media(2, listOf("Action", "Fantasy"), country = "JP")), country = "KR")
+                RelatedMangaRepository.GENRE_COUNTRY_QUERY -> page(media(3, country = "KR"))
+                else -> page(media(4, listOf("Action", "Fantasy"), country = "JP"), media(3, country = "KR"))
+            }
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        // Korean work 3 shares fewer genres but stays ahead of the Japanese matches.
+        assertEquals(listOf(3, 2, 4), state.items.map { it.id })
+        assertEquals("KR", state.items.first().country)
+    }
+    @Test fun `a failed global top-up keeps the Korean fill`() = runTest {
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR")
+                RelatedMangaRepository.GENRE_COUNTRY_QUERY -> page(media(3, country = "KR"))
+                else -> throw IOException("global failed")
+            }
+        }
+        assertEquals(listOf(3), (repo.load("Base", 1) as RelatedMangaState.Ready).items.map { it.id })
     }
 }
