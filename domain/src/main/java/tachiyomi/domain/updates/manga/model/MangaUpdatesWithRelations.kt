@@ -14,4 +14,5 @@ data class MangaUpdatesWithRelations(
     val sourceId: Long,
     val dateFetch: Long,
     val coverData: MangaCover,
+    val dateUpload: Long = 0,
 )

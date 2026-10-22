@@ -21,18 +21,50 @@ AND date_fetch > date_added
 ORDER BY date_fetch DESC;
 
 getRecentUpdates:
-SELECT *
-FROM updatesView
-WHERE datefetch > :after
--- Sources return chapters newest first. Choose before LIMIT so backlog cannot hide other works.
-AND chapterId = (
+-- One row per ongoing library work: its newest episode the user can open, dated by release.
+-- Selected columns mirror updatesView so the same mapper applies.
+SELECT
+    mangas._id AS mangaId,
+    mangas.title AS mangaTitle,
+    chapters._id AS chapterId,
+    chapters.name AS chapterName,
+    chapters.scanlator,
+    chapters.read,
+    chapters.bookmark,
+    chapters.last_page_read,
+    mangas.source,
+    mangas.favorite,
+    mangas.thumbnail_url AS thumbnailUrl,
+    mangas.cover_last_modified AS coverLastModified,
+    chapters.date_upload AS dateUpload,
+    chapters.date_fetch AS datefetch
+FROM mangas JOIN chapters
+ON mangas._id = chapters.manga_id
+WHERE mangas.favorite = 1
+-- Completed (2), publishing finished (4), cancelled (5) and on hiatus (6) works have no next episode.
+AND mangas.status NOT IN (2, 4, 5, 6)
+-- Sources return chapters newest first. Locked (🔒) episodes cannot be opened, so they are never the latest.
+-- Choose before LIMIT so backlog cannot hide other works.
+AND chapters._id = (
     SELECT latest._id
     FROM chapters AS latest
-    WHERE latest.manga_id = updatesView.mangaId
+    WHERE latest.manga_id = mangas._id
+    AND latest.name NOT LIKE '%🔒%'
     ORDER BY latest.source_order ASC, latest._id DESC
     LIMIT 1
 )
-ORDER BY datefetch DESC, mangaId DESC
+AND (
+    (chapters.date_fetch > mangas.date_added AND chapters.date_fetch > :after)
+    -- Naver stores episodes while still locked, so one that opens keeps an old fetch date; its release date counts.
+    OR (mangas.source = 850164079243120301 AND chapters.date_upload > mangas.date_added AND chapters.date_upload > :after)
+)
+ORDER BY (
+    CASE
+        WHEN mangas.source = 850164079243120301 AND chapters.date_upload > 0 THEN chapters.date_upload
+        WHEN chapters.date_upload > 0 AND chapters.date_upload < chapters.date_fetch THEN chapters.date_upload
+        ELSE chapters.date_fetch
+    END
+) DESC, mangaId DESC
 LIMIT :limit;
 
 getUpdatesByReadStatus:
