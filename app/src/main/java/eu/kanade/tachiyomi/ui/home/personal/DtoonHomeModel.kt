@@ -26,7 +26,14 @@ data class HomeEntry(val id: Long, val title: String, val sourceId: Long, val pa
     val key get() = WorkLinks.key(sourceId, path, manga)
     val kind get() = MediaKinds.forSource(sourceId, manga)
 }
-data class HomeSource(val id: Long, val name: String, val manga: Boolean) { val kind get() = MediaKinds.forSource(id, manga) }
+data class HomeSource(val id: Long, val name: String, val manga: Boolean, val supportsLatest: Boolean = true) { val kind get() = MediaKinds.forSource(id, manga) }
+
+object HomeFeedPolicy {
+    /** Sources that cannot serve the requested list never take a slot, so they cannot block the success cache. */
+    fun pick(sources: List<HomeSource>, kind: MediaKind?, latest: Boolean, limit: Int = 6): List<HomeSource> =
+        sources.filter { (kind == null || it.kind == kind) && (!latest || it.supportsLatest) }.sortedBy { it.name }
+            .groupBy { it.kind }.values.toList().let { groups -> (0 until limit).flatMap { i -> groups.mapNotNull { it.getOrNull(i) } }.take(limit) }
+}
 data class DtoonHomeState(val recent: List<HomeEntry> = emptyList(), val library: List<HomeEntry> = emptyList(), val sources: List<HomeSource> = emptyList(), val error: String? = null, val feed: List<HomeEntry> = emptyList(), val feedLoading: Boolean = false, val feedErrors: List<String> = emptyList())
 
 class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
@@ -42,10 +49,11 @@ class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
         feedJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.update { it.copy(feed = emptyList(), feedLoading = true, feedErrors = emptyList()) }
             // Bound requests and interleave per-source results; no claim of a cross-source popularity rank.
-            val available = (mangaSources.getCatalogueSources().filter { it.lang == "ko" }.map { HomeSource(it.id, it.name, true) } +
-                animeSources.getAll().filter { it.lang == "ko" && it.id >= 0 }.map { HomeSource(it.id, it.name, false) })
-                .filter { kind == null || it.kind == kind }.sortedBy { it.name }
-                .groupBy { it.kind }.values.toList().let { groups -> (0 until 6).flatMap { i -> groups.mapNotNull { it.getOrNull(i) } }.take(6) }
+            val available = HomeFeedPolicy.pick(
+                mangaSources.getCatalogueSources().filter { it.lang == "ko" }.map { HomeSource(it.id, it.name, true, it.supportsLatest) } +
+                    animeSources.getAll().filter { it.lang == "ko" && it.id >= 0 }.map { HomeSource(it.id, it.name, false, it.supportsLatest) },
+                kind, latest,
+            )
             val gate = Semaphore(3)
             val results = coroutineScope { available.map { source -> async {
                 gate.withPermit {
