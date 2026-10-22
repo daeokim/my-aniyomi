@@ -1,0 +1,129 @@
+name: Dtoon release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: dtoon-release
+  cancel-in-progress: false
+jobs:
+  # A release is published once per versionName; bump it in app/build.gradle.kts to ship a new APK.
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+      tag: ${{ steps.version.outputs.tag }}
+      exists: ${{ steps.version.outputs.exists }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Resolve version and existing release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+          code=$(sed -n 's/^ *versionCode = \([0-9]*\)$/\1/p' app/build.gradle.kts)
+          if [ -z "$name" ] || [ -z "$code" ]; then
+            echo "::error::versionName/versionCode not found in app/build.gradle.kts"
+            exit 1
+          fi
+          tag="v$name"
+          {
+            echo "name=$name"
+            echo "code=$code"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release $tag already exists; bump versionName to publish a new APK."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.exists != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      VERSION_NAME: ${{ needs.check.outputs.name }}
+      VERSION_CODE: ${{ needs.check.outputs.code }}
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Restore personal signing key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for v in SIGNING_KEYSTORE_BASE64 SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository secret $v is not set. No unsigned APK is published."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          umask 077
+          mkdir -p personal/signing
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > personal/signing/personal.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\n' \
+            "$SIGNING_STORE_PASSWORD" "$SIGNING_KEY_PASSWORD" "$SIGNING_KEY_ALIAS" \
+            > personal/signing/signing.properties
+      - uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12
+        with:
+          java-version: '17'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@94baf225fe0a508e581a564467443d0e2379123b
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          packages: platform-tools
+      - name: Install Android build components
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.1'
+      - name: Run independent policy tests
+        run: bash tools/test-personal.sh
+      - name: Compile app and run Android JVM tests
+        run: bash gradlew :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
+      - name: Verify signature and prepare release files
+        run: |
+          apk=app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          if [ ! -f "$apk" ]; then
+            echo "::error::Signed arm64 APK not found; unsigned/debug artifacts are not published."
+            exit 1
+          fi
+          "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --print-certs "$apk"
+          mkdir -p personal/output
+          out="Dtoon-$VERSION_NAME-arm64-v8a.apk"
+          cp "$apk" "personal/output/$out"
+          (cd personal/output && sha256sum "$out" > SHA256SUMS)
+          {
+            echo "Dtoon $VERSION_NAME (versionCode $VERSION_CODE), arm64-v8a 전용."
+            echo
+            echo "- 앱 ID는 원본 애니요미와 같은 \`xyz.jmir.tachiyomi.mi\`입니다. 서명이 다른 앱이 설치되어 있으면 백업 후 삭제하고 설치하세요."
+            echo "- 이전 Dtoon 버전 위에는 그대로 업데이트 설치됩니다."
+            echo
+            echo '```'
+            cat personal/output/SHA256SUMS
+            echo '```'
+          } > personal/output/notes.md
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            "personal/output/Dtoon-$VERSION_NAME-arm64-v8a.apk" \
+            personal/output/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Dtoon $VERSION_NAME" \
+            --notes-file personal/output/notes.md
+      - name: Remove signing material
+        if: always()
+        run: rm -rf personal/signing

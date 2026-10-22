@@ -1,70 +1,65 @@
 <div align="center">
 
-<a href="https://aniyomi.org">
-    <img src="./.github/assets/logo.png" alt="Aniyomi logo" title="Aniyomi logo" width="80"/>
-</a>
+<img src="./personal/branding/dtoon-icon.svg" alt="Dtoon icon" title="Dtoon icon" width="96"/>
 
-# Aniyomi [App](#)
+# Dtoon
 
-### Full-featured player and reader, based on ~~Tachiyomi~~ Mihon.
-Discover and watch anime, cartoons, series, and more – easier than ever on your Android device.
+### 폴더블 화면에 맞춘 개인용 영상·만화 앱
 
-[![Discord server](https://img.shields.io/discord/841701076242530374.svg?label=&labelColor=6A7EC2&color=7389D8&logo=discord&logoColor=FFFFFF)](https://discord.gg/F32UjdJZrR)
-[![GitHub downloads](https://img.shields.io/github/downloads/aniyomiorg/aniyomi/total?label=downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://github.com/aniyomiorg/aniyomi/releases)
+[Aniyomi](https://github.com/aniyomiorg/aniyomi)를 기반으로 접은 화면과 펼친 화면 모두에서 편하게 보도록 다듬은 개인 포크입니다.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/aniyomiorg/aniyomi/build_push.yml?labelColor=27303D)](https://github.com/aniyomiorg/aniyomi/actions/workflows/build_push.yml)
-[![License: Apache-2.0](https://img.shields.io/github/license/aniyomiorg/aniyomi?labelColor=27303D&color=818cf8)](/LICENSE)
-[![Translation status](https://img.shields.io/weblate/progress/aniyomi?labelColor=27303D&color=946300)](https://hosted.weblate.org/engage/aniyomi/)
+[![Latest release](https://img.shields.io/github/v/release/daeokim/my-aniyomi?label=Release&labelColor=27303D&color=6444F4)](https://github.com/daeokim/my-aniyomi/releases/latest)
+[![Release build](https://img.shields.io/github/actions/workflow/status/daeokim/my-aniyomi/release.yml?label=Build&labelColor=27303D)](https://github.com/daeokim/my-aniyomi/actions/workflows/release.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-00A9EF?labelColor=27303D)](/LICENSE)
 
-## Download
+## 다운로드
 
-[![Aniyomi Stable](https://img.shields.io/github/release/aniyomiorg/aniyomi.svg?maxAge=3600&label=Stable&labelColor=06599d&color=043b69)](https://github.com/aniyomiorg/aniyomi/releases)
-[![Aniyomi Preview](https://img.shields.io/github/v/release/aniyomiorg/aniyomi-preview.svg?maxAge=3600&label=Beta&labelColor=2c2c47&color=1c1c39)](https://github.com/aniyomiorg/aniyomi-preview/releases)
+[**최신 APK 받기 →**](https://github.com/daeokim/my-aniyomi/releases/latest)
 
-*Requires Android 8.0 or higher.*
-
-## Features
-
-<div align="left">
-
-* Local reading and watching of content.
-* A configurable reader with multiple viewers, reading directions and other settings.
-* A configurable player built on mpv-android with multiple options and settings.
-* Tracker support: [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [Kitsu](https://kitsu.app/), [MangaUpdates](https://mangaupdates.com), [Shikimori](https://shikimori.one), [Simkl](https://simkl.com/), and [Bangumi](https://bgm.tv/) support.
-* Categories to organize your library.
-* Light and dark themes.
-* Schedule updating your library for new chapters/episodes.
-* Create backups locally to read/watch offline or to your desired cloud service.
-* Plus much more...
+*Android 8.0 이상, arm64-v8a 전용*
 
 </div>
 
-## Contributing
+## 주요 기능
 
-[Code of conduct](./CODE_OF_CONDUCT.md) · [Contributing guide](./CONTRIBUTING.md)
+- **통합 홈**: 최근 본 영상·만화 이어보기, 서재 작품, 여러 소스의 인기·최신 첫 페이지를 한 화면에 모아 보여 줍니다.
+- **4탭 카탈로그**: 소스마다 인기 / 최신 / 요일 / 완결 탭을 스와이프로 오가며 3:4 그리드로 탐색합니다. 탭·요일·필터마다 스크롤 위치를 따로 기억합니다.
+- **폴더블 대응**: 접으면 위아래, 펼치면 좌우로 목록을 배치하고, 화면을 바꿔도 스크롤 위치를 유지합니다.
+- **만화 두 쪽 보기**: 넓은 화면에서 서로 다른 두 페이지를 나란히 보여 줍니다. 표지 단독 표시, 우→좌·좌→우 읽기, 장 경계와 넓은 이미지 처리를 지원합니다.
+- **연관 추천**: 만화 상세 화면에서 AniList 추천작과 같은 장르 작품을 보여 주고, 누르면 설치된 소스에서 바로 검색합니다.
+- **이어보기 우선**: 실제 최근 기록과 재생 위치를 기준으로 이어보기를 정렬합니다.
+- 기존 Aniyomi 기능(로컬 감상, mpv 기반 플레이어, 트래커, 카테고리, 백업 등)을 그대로 쓸 수 있습니다.
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+## 설치 전 확인
 
-Before reporting a new issue, take a look at the [FAQ](https://aniyomi.org/docs/faq/general), the [changelog](https://aniyomi.org/changelogs/) and the already opened [issues](https://github.com/aniyomiorg/aniyomi/issues); if you got any questions, join our [Discord server](https://discord.gg/F32UjdJZrR).
+- 앱 ID가 원본 애니요미와 같은 `xyz.jmir.tachiyomi.mi`라서 **함께 설치되지 않고 교체**됩니다.
+- 공식 애니요미나 다른 포크와 서명이 달라 그 위에 바로 덮어 설치할 수 없습니다. **백업 생성 → 다운로드 폴더 따로 보관 → 기존 앱 삭제 → Dtoon 설치 → 백업 복원** 순서로 진행하세요.
+- 이전 Dtoon 버전 위에는 그대로 업데이트 설치됩니다.
+- 앱 안의 자동 업데이트 확인은 꺼져 있습니다. 새 버전은 [Releases](https://github.com/daeokim/my-aniyomi/releases)에서 받으세요.
 
-### Repositories
+## 릴리스 만들기 (저장소 관리자용)
 
-[![aniyomiorg/aniyomi-website - GitHub](https://github-readme-stats.vercel.app/api/pin/?username=aniyomiorg&repo=aniyomi-website&bg_color=161B22&text_color=c9d1d9&title_color=818cf8&icon_color=818cf8&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/aniyomiorg/aniyomi-website/)
-[![aniyomiorg/aniyomi-mpv-lib - GitHub](https://github-readme-stats.vercel.app/api/pin/?username=aniyomiorg&repo=aniyomi-mpv-lib&bg_color=161B22&text_color=c9d1d9&title_color=818cf8&icon_color=818cf8&border_radius=8&hide_border=true&description_lines_count=2)](https://github.com/aniyomiorg/aniyomi-mpv-lib/)
+`app/build.gradle.kts`의 `versionName`과 `versionCode`를 올려 `main`에 푸시하면 [Dtoon release](.github/workflows/release.yml) 워크플로가 서명된 APK를 빌드해 Releases에 올립니다. 이미 릴리스된 버전이면 건너뜁니다. Actions 탭에서 직접 실행할 수도 있습니다.
 
-### Credits
+처음 한 번은 **Settings → Secrets and variables → Actions**에 아래 4개를 등록해야 합니다. 값은 로컬 `personal/signing/`의 파일에서 가져옵니다.
 
-Thank you to all the people who have contributed!
+| Secret | 값 |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | `base64 -w0 personal/signing/personal.jks` 출력 |
+| `SIGNING_STORE_PASSWORD` | `signing.properties`의 `storePassword` |
+| `SIGNING_KEY_ALIAS` | `signing.properties`의 `keyAlias` |
+| `SIGNING_KEY_PASSWORD` | `signing.properties`의 `keyPassword` |
 
-<a href="https://github.com/aniyomiorg/aniyomi/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=aniyomiorg/aniyomi" alt="Aniyomi app contributors" title="Aniyomi app contributors" width="800"/>
-</a>
+서명 키를 잃어버리면 기존 설치본에 업데이트할 수 없습니다. 키 파일은 git에 올리지 말고 안전하게 따로 보관하세요. 로컬 빌드 방법과 세부 동작은 [README.personal.md](./README.personal.md)를 참고하세요.
 
-### Disclaimer
+## 출처와 고지
 
-The developer(s) of this application does not have any affiliation with the content providers available, and this application hosts zero content.
+- 기반: [aniyomiorg/aniyomi](https://github.com/aniyomiorg/aniyomi) (Mihon/Tachiyomi 계열). 원 개발자와 기여자 여러분께 감사드립니다.
+- 아이콘: [Pinyon Script](https://github.com/SorkinType/Pinyon) 글꼴의 D·O 윤곽, SIL Open Font License 1.1 ([세부 정보](./personal/branding/README.md))
+- 이 앱은 콘텐츠를 호스팅하지 않으며, 앱에서 연결하는 각 콘텐츠 제공자와 관계가 없습니다. 각 서비스의 이용 조건은 별도로 적용됩니다.
+- 이 저장소는 개인 포크이며 공식 Aniyomi 프로젝트가 아닙니다.
 
-### License
+## License
 
 <pre>
 Copyright © 2015 Javier Tomás
@@ -83,16 +78,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 </pre>
-
-</div>
-
-
-## Dtoon Fold patch 4
-
-- Replaces the mixed source overview with Popular / Latest / Weekday / Completed swipe tabs and vertical adaptive 3:4 grids for manga and video. Unsupported source capabilities are explicitly shown. Filtered paging and saved anchors are independent per tab/day/filter.
-- Adds a unified landing home with recent manga/video progress, media categories, installed-source entry points, library titles and real Popular/Latest first-page feeds interleaved from up to six Korean sources (three concurrent requests, 25-second per-source timeout and five-minute successful cache). Long-press to explicitly link the same work across sources, then map episodes and merge completion/bookmark flags. Page offsets, playback timestamps and histories are not copied across sources.
-- Continue actions prioritize actual most-recent history and unfinished playback positions in milliseconds. Recommendation seed choices persist; local library recommendations are used when AniList returns no match, and existing library matches open directly.
-- Adds source-stage diagnostics, Naver restricted-episode labels/official-web guidance, reader image errors, bounded stream URL refresh and horizontal half-fold player controls layout.
-- Retains the DO icon, original application ID and personal update signing identity. Version code 13204.
-
-Validation: independent fold-policy and integration tests; release compilation and JVM policy/recommendation tests in private Actions. Fold posture, real media sources, quality changes, subtitles and expired CDN URLs still require device validation. Source availability and login/payment restrictions depend on each extension and service.
