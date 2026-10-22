@@ -224,7 +224,9 @@ class RelatedMangaRepository(
         private const val MIN_THEMED = 6
         // Tags ranked below this share are incidental on AniList; spoiler tags never drive a recommendation.
         private const val MIN_TAG_RANK = 60
-        private const val FIELDS = "id type format isAdult countryOfOrigin title { english romaji native } synonyms coverImage { large } genres tags { name rank isMediaSpoiler }"
+        // Works whose tags are all weaker still have themes: use their highest-ranked ones.
+        private const val FALLBACK_TAGS = 3
+        private const val FIELDS = "id type format isAdult countryOfOrigin title { english romaji native } synonyms coverImage { large } genres tags { name rank isMediaSpoiler category }"
 
         private fun String.forAnime() = replace("type: MANGA", "type: ANIME")
         internal val SEARCH_QUERY = "query DtoonMatch(\$search: String!) { Page(perPage: 5) { media(search: \$search, type: MANGA, format_not: NOVEL) { $FIELDS } } }"
@@ -246,7 +248,7 @@ class RelatedMangaRepository(
     @Serializable
     private data class Cover(val large: String? = null)
     @Serializable
-    private data class Tag(val name: String = "", val rank: Int = 0, val isMediaSpoiler: Boolean = false)
+    private data class Tag(val name: String = "", val rank: Int = 0, val isMediaSpoiler: Boolean = false, val category: String? = null)
     @Serializable
     private data class Recommendations(val nodes: List<Recommendation> = emptyList())
     @Serializable
@@ -265,8 +267,16 @@ class RelatedMangaRepository(
         val tags: List<Tag> = emptyList(),
         val recommendations: Recommendations? = null,
     ) {
-        fun strongTags() = tags.filter { !it.isMediaSpoiler && it.rank >= MIN_TAG_RANK && it.name.isNotBlank() }
-            .map { it.name.lowercase(Locale.ROOT) }.toSet()
+        /**
+         * Theme tags: no spoilers and no "Technical" ones ("Full Color", "Long Strip" describe nearly every
+         * webtoon's format, not its subject). Strong tags when present, otherwise the highest-ranked few.
+         */
+        fun strongTags(): Set<String> {
+            val themes = tags.filter { !it.isMediaSpoiler && it.name.isNotBlank() && it.category?.startsWith("Technical") != true }
+            val strong = themes.filter { it.rank >= MIN_TAG_RANK }
+            val chosen = strong.ifEmpty { themes.sortedByDescending { it.rank }.take(FALLBACK_TAGS) }
+            return chosen.map { it.name.lowercase(Locale.ROOT) }.toSet()
+        }
         fun names() = (listOfNotNull(title.native, title.english, title.romaji) + synonyms).filter { it.isNotBlank() }.distinct()
         fun toCard(): RelatedManga? {
             val names = names()

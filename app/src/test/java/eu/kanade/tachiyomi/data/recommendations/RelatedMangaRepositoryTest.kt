@@ -20,15 +20,19 @@ import java.io.IOException
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RelatedMangaRepositoryTest {
-    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false, country: String? = null, tags: List<Pair<String, Int>> = emptyList()): String = buildJsonObject {
+    private fun media(id: Int, genres: List<String> = listOf("Action"), title: String = "Title $id", type: String = "MANGA", format: String = "MANGA", adult: Boolean = false, country: String? = null, tags: List<Pair<String, Int>> = emptyList(), technical: List<String> = emptyList(), spoilers: List<String> = emptyList()): String = buildJsonObject {
         put("id", id); put("type", type); put("format", format); put("isAdult", adult)
         if (country != null) put("countryOfOrigin", country)
-        if (tags.isNotEmpty()) put("tags", buildJsonArray { tags.forEach { (name, rank) -> add(buildJsonObject { put("name", name); put("rank", rank) }) } })
+        if (tags.isNotEmpty() || technical.isNotEmpty() || spoilers.isNotEmpty()) put("tags", buildJsonArray {
+            tags.forEach { (name, rank) -> add(buildJsonObject { put("name", name); put("rank", rank); put("category", "Theme-Other") }) }
+            technical.forEach { add(buildJsonObject { put("name", it); put("rank", 100); put("category", "Technical") }) }
+            spoilers.forEach { add(buildJsonObject { put("name", it); put("rank", 100); put("isMediaSpoiler", true) }) }
+        })
         put("title", buildJsonObject { put("english", title) })
         put("genres", buildJsonArray { genres.forEach { add(JsonPrimitive(it)) } })
     }.toString()
-    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList(), country: String? = null, tags: List<Pair<String, Int>> = emptyList(), type: String = "MANGA"): String {
-        val base = Json.parseToJsonElement(media(1, genres, country = country, tags = tags, type = type)).toString().dropLast(1)
+    private fun related(genres: List<String> = listOf("Action"), nodes: List<Pair<Int, String>> = emptyList(), country: String? = null, tags: List<Pair<String, Int>> = emptyList(), type: String = "MANGA", technical: List<String> = emptyList(), spoilers: List<String> = emptyList()): String {
+        val base = Json.parseToJsonElement(media(1, genres, country = country, tags = tags, type = type, technical = technical, spoilers = spoilers)).toString().dropLast(1)
         return """{"data":{"Media":$base,"recommendations":{"nodes":[${nodes.joinToString { """{"rating":${it.first},"mediaRecommendation":${it.second}}""" }}]}}}}"""
     }
     private fun page(vararg items: String) = """{"data":{"Page":{"media":[${items.joinToString()}]}}}"""
@@ -245,17 +249,32 @@ class RelatedMangaRepositoryTest {
         assertEquals((10..15).toList(), state.items.map { it.id })
         assertTrue(state.items.all { it.commonTags == setOf("food") })
     }
-    @Test fun `weak and spoiler tags never count as shared themes`() = runTest {
+    @Test fun `technical and spoiler tags never count as shared themes`() = runTest {
         val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
             when (query) {
-                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR", tags = listOf("Food" to 30))
-                else -> page(*(10..15).map { media(it, country = "KR", tags = listOf("Food" to 30)) }.toTypedArray(), media(16, country = "KR"))
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR", technical = listOf("Full Color", "Long Strip"), spoilers = listOf("Death"))
+                else -> page(*(10..15).map { media(it, country = "KR", technical = listOf("Full Color", "Long Strip"), spoilers = listOf("Death")) }.toTypedArray(), media(16, country = "KR"))
             }
         }
         val state = repo.load("Base", 1) as RelatedMangaState.Ready
-        // No strong seed tags: nothing is filtered and no theme is claimed.
+        // Format and spoiler tags are not themes: nothing is filtered and no theme is claimed.
         assertEquals(7, state.items.size)
         assertTrue(state.items.all { it.commonTags.isEmpty() })
+    }
+    @Test fun `a work with only weak tags uses its highest-ranked ones as themes`() = runTest {
+        val seedTags = listOf("Cohabitation" to 45, "Food" to 40, "Work" to 35, "Coastal" to 5)
+        val repo = RelatedMangaRepository(requestScope = backgroundScope) { query, _ ->
+            when (query) {
+                RelatedMangaRepository.RELATED_QUERY -> related(country = "KR", tags = seedTags)
+                else -> page(
+                    *((10..15).map { media(it, country = "KR", tags = listOf("Food" to 30)) } +
+                        media(16, country = "KR", tags = listOf("Suicide" to 90)) + media(17, country = "KR", tags = listOf("Coastal" to 80))).toTypedArray(),
+                )
+            }
+        }
+        val state = repo.load("Base", 1) as RelatedMangaState.Ready
+        // Top three seed themes are cohabitation, food and work; "coastal" (rank 5) is not one of them.
+        assertEquals((10..15).toList(), state.items.map { it.id })
     }
     @Test fun `anime mode queries anime and rejects manga entries`() = runTest {
         val queries = mutableListOf<String>()
