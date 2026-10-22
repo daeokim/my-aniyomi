@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           java-version: '17'
           distribution: temurin
-      - uses: gradle/actions/setup-gradle@94baf225fe0a508e581a564467443d0e2379123b
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
         with:
           packages: platform-tools
       - name: Install Android build components
@@ -39,13 +39,13 @@ jobs:
           cp "$ANDROID_HOME/build-tools/35.0.1/zipalign" personal/output/signing-tools/
           cp app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk personal/output/
           sha256sum personal/output/app-arm64-v8a-release-unsigned.apk > personal/output/SHA256SUMS
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: private-unsigned-apk-and-tools
           path: personal/output/
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:
           name: private-test-results
