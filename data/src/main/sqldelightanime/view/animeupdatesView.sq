@@ -24,16 +24,88 @@ OR (animes.favorite = 0 AND parent.favorite = 1 AND episodes.date_fetch > parent
 ORDER BY date_fetch DESC;
 
 getRecentAnimeUpdates:
-SELECT *
-FROM animeupdatesView
-WHERE datefetch > :after
-ORDER BY datefetch DESC, episodeId DESC
+-- One row per ongoing library work (or season of a library work): its newest episode, dated by release.
+-- Selected columns mirror animeupdatesView so the same mapper applies.
+SELECT
+    animes._id AS animeId,
+    animes.title AS animeTitle,
+    episodes._id AS episodeId,
+    episodes.name AS episodeName,
+    episodes.scanlator,
+    episodes.seen,
+    episodes.bookmark,
+    episodes.fillermark,
+    episodes.last_second_seen,
+    episodes.total_seconds AS totalSeconds,
+    animes.source,
+    animes.favorite,
+    animes.thumbnail_url AS thumbnailUrl,
+    animes.cover_last_modified AS coverLastModified,
+    episodes.date_upload AS dateUpload,
+    episodes.date_fetch AS datefetch
+FROM animes JOIN episodes
+ON animes._id = episodes.anime_id
+LEFT JOIN animes AS parent ON animes.parent_id = parent._id
+WHERE (
+    (animes.favorite = 1 AND episodes.date_fetch > animes.date_added)
+    OR (animes.favorite = 0 AND parent.favorite = 1 AND episodes.date_fetch > parent.date_added)
+)
+AND episodes.date_fetch > :after
+-- Completed (2), publishing finished (4), cancelled (5) and on hiatus (6) works have no next episode.
+AND animes.status NOT IN (2, 4, 5, 6)
+-- Sources return episodes newest first. Choose before LIMIT so backlog cannot hide other works.
+AND episodes._id = (
+    SELECT latest._id
+    FROM episodes AS latest
+    WHERE latest.anime_id = animes._id
+    ORDER BY latest.source_order ASC, latest._id DESC
+    LIMIT 1
+)
+ORDER BY (
+    CASE WHEN episodes.date_upload > 0 AND episodes.date_upload < episodes.date_fetch THEN episodes.date_upload ELSE episodes.date_fetch END
+) DESC, animeId DESC
 LIMIT :limit;
 
 getUpdatesBySeenStatus:
-SELECT *
-FROM animeupdatesView
-WHERE seen = :seen
-AND datefetch > :after
-
+-- Home-screen widget: the same rows as getRecentAnimeUpdates, limited to unseen ones.
+-- Selected columns mirror animeupdatesView so the same mapper applies.
+SELECT
+    animes._id AS animeId,
+    animes.title AS animeTitle,
+    episodes._id AS episodeId,
+    episodes.name AS episodeName,
+    episodes.scanlator,
+    episodes.seen,
+    episodes.bookmark,
+    episodes.fillermark,
+    episodes.last_second_seen,
+    episodes.total_seconds AS totalSeconds,
+    animes.source,
+    animes.favorite,
+    animes.thumbnail_url AS thumbnailUrl,
+    animes.cover_last_modified AS coverLastModified,
+    episodes.date_upload AS dateUpload,
+    episodes.date_fetch AS datefetch
+FROM animes JOIN episodes
+ON animes._id = episodes.anime_id
+LEFT JOIN animes AS parent ON animes.parent_id = parent._id
+WHERE (
+    (animes.favorite = 1 AND episodes.date_fetch > animes.date_added)
+    OR (animes.favorite = 0 AND parent.favorite = 1 AND episodes.date_fetch > parent.date_added)
+)
+AND episodes.date_fetch > :after
+AND episodes.seen = :seen
+-- Completed (2), publishing finished (4), cancelled (5) and on hiatus (6) works have no next episode.
+AND animes.status NOT IN (2, 4, 5, 6)
+-- Sources return episodes newest first. Choose before LIMIT so backlog cannot hide other works.
+AND episodes._id = (
+    SELECT latest._id
+    FROM episodes AS latest
+    WHERE latest.anime_id = animes._id
+    ORDER BY latest.source_order ASC, latest._id DESC
+    LIMIT 1
+)
+ORDER BY (
+    CASE WHEN episodes.date_upload > 0 AND episodes.date_upload < episodes.date_fetch THEN episodes.date_upload ELSE episodes.date_fetch END
+) DESC, animeId DESC
 LIMIT :limit;

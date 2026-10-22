@@ -116,13 +116,25 @@ class LatestMangaUpdatesTest(unittest.TestCase):
         self.assertEqual([], self.ids(after=50))
         self.assertEqual([1], self.ids(after=49))
 
-    def test_read_status_query_remains_independent_of_latest_only_display(self):
+    def unread_ids(self, after=0):
+        query = SQL.split("getUpdatesByReadStatus:")[1].strip()
+        return [row[2] for row in self.db.execute(query, {"read": 0, "after": after, "limit": 500})]
+
+    def test_widget_lists_unread_latest_episodes_only(self):
+        # Dtoon9.3: the home-screen widget follows the Updates tab instead of listing every unread chapter.
         self.chapter(1, 0, read=1)
         self.chapter(2, 1, read=0)
-        query = SQL.split("getUpdatesByReadStatus:")[1].strip()
-        unread = self.db.execute(query, {"read": 0, "after": 0, "limit": 500}).fetchall()
-        self.assertEqual([2], [row[2] for row in unread])
-        self.assertEqual([1], self.ids())
+        self.add_manga(2)
+        self.chapter(3, 0, manga_id=2)
+        self.assertEqual([3], self.unread_ids())
+
+    def test_widget_skips_locked_and_finished_works(self):
+        self.chapter(1, 0, name="🔒 2")
+        self.add_manga(2, status=2)
+        self.chapter(3, 0, manga_id=2)
+        self.add_manga(3, source=self.NAVER, date_added=50)
+        self.chapter(4, 0, manga_id=3, fetched=40, uploaded=300, name="5 - 열림")
+        self.assertEqual([4], self.unread_ids())
 
 
     # Dtoon9.2: Naver locked episodes, finished works and release-date order.

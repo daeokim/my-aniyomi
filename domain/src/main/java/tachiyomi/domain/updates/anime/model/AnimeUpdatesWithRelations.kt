@@ -16,4 +16,5 @@ data class AnimeUpdatesWithRelations(
     val sourceId: Long,
     val dateFetch: Long,
     val coverData: AnimeCover,
+    val dateUpload: Long = 0,
 )
