@@ -32,6 +32,11 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.1'
       - name: Run independent policy tests
         run: bash tools/test-personal.sh
+      - name: Sample live genre recommendations
+        # Diagnostic report in the job summary; the public catalogue's availability never blocks a PR.
+        continue-on-error: true
+        timeout-minutes: 5
+        run: python3 tools/check-recommendations.py
       - name: Compile app and run Android JVM tests
         run: bash gradlew :domain:testReleaseUnitTest :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

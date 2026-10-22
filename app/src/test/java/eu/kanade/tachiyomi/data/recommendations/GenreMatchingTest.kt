@@ -35,4 +35,10 @@ class GenreMatchingTest {
         assertEquals(listOf(15, 20, 10), order)
         repeat(100) { assertEquals(order, GenreMatching.rank(setOf("action"), cards.shuffled(kotlin.random.Random(it))).map { it.id }) }
     }
+    @Test fun `a known seed country puts same-country works ahead of better genre overlap`() {
+        val kr = card(1, "Action").copy(country = "KR")
+        val jp = card(2, "Action", "Fantasy").copy(country = "JP")
+        assertEquals(listOf(1, 2), GenreMatching.rank(setOf("action", "fantasy"), listOf(jp, kr), "KR").map { it.id })
+        assertEquals(listOf(2, 1), GenreMatching.rank(setOf("action", "fantasy"), listOf(jp, kr)).map { it.id })
+    }
 }

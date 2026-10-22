@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadManager
 import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadProvider
+import eu.kanade.tachiyomi.data.library.LibraryUpdatePolicy
 import tachiyomi.data.items.episode.EpisodeSanitizer
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.items.episode.interactor.GetEpisodesByAnimeId
@@ -192,16 +193,18 @@ class SyncEpisodesWithSource(
 
         // Date fetch is set in such a way that the upper ones will have bigger value than the lower ones
         // Sources MUST return the episodes from most to less recent, which is common.
-        var itemCount = newEpisodes.size
-        var updatedToAdd = newEpisodes.map { toAddItem ->
-            var episode = toAddItem.copy(dateFetch = nowMillis + itemCount--)
+        // Personal fork: a library entry seen for the first time stores its backlog without reporting it as new.
+        val firstLibrarySync = dbEpisodes.isEmpty() && anime.favorite && anime.dateAdded > 0
+        val fetchDates = LibraryUpdatePolicy.fetchDates(newEpisodes.size, nowMillis, anime.dateAdded, firstLibrarySync)
+        var updatedToAdd = newEpisodes.mapIndexed { index, toAddItem ->
+            var episode = toAddItem.copy(dateFetch = fetchDates[index])
 
             if (episode.episodeNumber in readEpisodeNumbers && markDuplicateAsRead) {
                 changedOrDuplicateReadUrls.add(episode.url)
                 episode = episode.copy(seen = true)
             }
 
-            if (!episode.isRecognizedNumber || episode.episodeNumber !in deletedEpisodeNumbers) return@map episode
+            if (!episode.isRecognizedNumber || episode.episodeNumber !in deletedEpisodeNumbers) return@mapIndexed episode
 
             episode = episode.copy(
                 seen = episode.episodeNumber in deletedSeenEpisodeNumbers,
@@ -237,6 +240,7 @@ class SyncEpisodesWithSource(
         // Note that last_update actually represents last time the episode list changed at all
         updateAnime.awaitUpdateLastUpdate(anime.id)
 
+        if (firstLibrarySync) return emptyList()
         return updatedToAdd.filterNot { it.url in changedOrDuplicateReadUrls }
     }
 }

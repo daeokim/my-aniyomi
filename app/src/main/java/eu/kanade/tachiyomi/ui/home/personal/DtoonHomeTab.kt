@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.ui.home.personal
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
@@ -44,15 +46,17 @@ data object DtoonHomeTab : Tab {
         val scope = rememberCoroutineScope()
         var category by rememberSaveable { mutableIntStateOf(-2) }
         var feedMode by rememberSaveable { mutableIntStateOf(1) }
-        var selected by remember { mutableStateOf<HomeEntry?>(null) }
-        var choosingLink by remember { mutableStateOf(false) }
+        // Saved by key so the long-press dialog survives fold/unfold activity recreation.
+        var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
+        var choosingLink by rememberSaveable { mutableStateOf(false) }
+        var showAllSources by rememberSaveable { mutableStateOf(false) }
         var revision by remember { mutableIntStateOf(0) }
-        val selectedEntry = selected
+        val selectedEntry = selectedKey?.let { key -> (state.recent + state.library + state.feed).firstOrNull { it.key == key } }
         if (selectedEntry != null) {
             val members = remember(selectedEntry.key, revision) { WorkLinks.members(selectedEntry.key) }
             val alternatives = (state.library + state.recent).distinctBy { it.key }
                 .filter { it.key != selectedEntry.key && it.manga == selectedEntry.manga && it.kind == selectedEntry.kind }
-            AlertDialog(onDismissRequest = { selected = null; choosingLink = false },
+            AlertDialog(onDismissRequest = { selectedKey = null; choosingLink = false },
                 title = { Text(if (choosingLink) "같은 작품 연결" else selectedEntry.title) },
                 text = {
                     Column {
@@ -65,20 +69,21 @@ data object DtoonHomeTab : Tab {
                                 }
                             }
                         } else {
-                            TextButton(onClick = { selected = null; navigator.push(if (selectedEntry.manga) MangaScreen(selectedEntry.id) else AnimeScreen(selectedEntry.id)) }) { Text("작품 상세 · 회차 확인") }
+                            TextButton(onClick = { selectedKey = null; navigator.push(if (selectedEntry.manga) MangaScreen(selectedEntry.id) else AnimeScreen(selectedEntry.id)) }) { Text("작품 상세 · 회차 확인") }
                             TextButton(onClick = { choosingLink = true }) { Text("같은 작품의 다른 소스 연결") }
                             alternatives.filter { it.key in members }.forEach { other ->
-                                TextButton(onClick = { selected = null; navigator.push(if (other.manga) MangaScreen(other.id) else AnimeScreen(other.id)) }) { Text("연결된 소스: ${model.sourceName(other)}") }
-                                TextButton(onClick = { selected = null; navigator.push(ProgressCopyScreen(selectedEntry.id, other.id, selectedEntry.manga)) }) { Text("이 소스로 회차 대응 · 진행도 복사") }
+                                TextButton(onClick = { selectedKey = null; navigator.push(if (other.manga) MangaScreen(other.id) else AnimeScreen(other.id)) }) { Text("연결된 소스: ${model.sourceName(other)}") }
+                                TextButton(onClick = { selectedKey = null; navigator.push(ProgressCopyScreen(selectedEntry.id, other.id, selectedEntry.manga)) }) { Text("이 소스로 회차 대응 · 진행도 복사") }
                             }
                             if (members.isNotEmpty()) TextButton(onClick = { WorkLinks.disconnect(selectedEntry.key); revision++ }) { Text("이 작품 연결 해제") }
                         }
                     }
-                }, confirmButton = { TextButton(onClick = { selected = null; choosingLink = false }) { Text("닫기") } })
+                }, confirmButton = { TextButton(onClick = { selectedKey = null; choosingLink = false }) { Text("닫기") } })
         }
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Text("Dtoon", Modifier.padding(16.dp), style = MaterialTheme.typography.headlineSmall)
-            FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // One scrollable line instead of up to three wrapped rows on the folded screen.
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilterChip(selected = category == -2, onClick = { category = -2 }, label = { Text("전체") })
                 FilterChip(selected = category == -1, onClick = { category = -1 }, label = { Text("계속 보기") })
                 MediaKind.entries.forEachIndexed { i, kind -> FilterChip(selected = category == i, onClick = { category = i }, label = { Text(kind.label) }) }
@@ -104,7 +109,7 @@ data object DtoonHomeTab : Tab {
                     if (category == -2 && state.recent.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) { Text("계속 보기", style = MaterialTheme.typography.titleMedium) }
                         items(state.recent.take(6), key = { "continue:${it.key}" }) { entry ->
-                            CatalogCoverCard(entry.title, entry.cover, model.sourceName(entry), onClick = { scope.launch {
+                            CatalogCoverCard(entry.title, entry.cover, listOfNotNull(model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = { scope.launch {
                                 if (entry.manga) {
                                     val chapter = ResumeResolver.manga(entry.id)
                                     if (chapter != null) context.startActivity(ReaderActivity.newIntent(context, entry.id, chapter.id)) else navigator.push(MangaScreen(entry.id))
@@ -112,7 +117,7 @@ data object DtoonHomeTab : Tab {
                                     val episode = ResumeResolver.anime(entry.id)
                                     if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
                                 }
-                            } }, onLongClick = { selected = entry })
+                            } }, onLongClick = { selectedKey = entry.key })
                         }
                     }
                     if (category != -1 && feedMode != 2) {
@@ -122,13 +127,16 @@ data object DtoonHomeTab : Tab {
                     }
                     if (sources.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) { Text("소스 탐색 · 인기 / 최신 / 요일별 / 완결", style = MaterialTheme.typography.titleSmall) }
-                        items(sources.take(6), key = { "source:${it.manga}:${it.id}" }) { source ->
+                        items(if (showAllSources) sources else sources.take(6), key = { "source:${it.manga}:${it.id}" }) { source ->
                             OutlinedButton(onClick = { navigator.push(if (source.manga) BrowseMangaSourceScreen(source.id, null) else BrowseAnimeSourceScreen(source.id, null)) }) { Text(source.name, maxLines = 2) }
+                        }
+                        if (sources.size > 6) item(span = { GridItemSpan(maxLineSpan) }) {
+                            TextButton(onClick = { showAllSources = !showAllSources }) { Text(if (showAllSources) "소스 접기" else "전체 소스 ${sources.size}개 보기") }
                         }
                     } else if (category >= 0) item(span = { GridItemSpan(maxLineSpan) }) { Text("설치된 소스가 없습니다. 탐색 → 확장에서 소스를 설치하세요.") }
                     if (entries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (category == -1) "계속 보기 · 길게 눌러 소스 연결" else if (feedMode == 2) "내 보관함" else if (feedMode == 1) "최신 작품" else "인기 작품", style = MaterialTheme.typography.titleMedium) }
                     items(entries, key = { it.key }) { entry ->
-                        CatalogCoverCard(entry.title, entry.cover, "${entry.kind.label} · ${model.sourceName(entry)}", onClick = {
+                        CatalogCoverCard(entry.title, entry.cover, listOfNotNull(entry.kind.label, model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = {
                             if (category != -1) navigator.push(if (entry.manga) MangaScreen(entry.id) else AnimeScreen(entry.id))
                             else scope.launch {
                                 if (entry.manga) {
@@ -139,7 +147,7 @@ data object DtoonHomeTab : Tab {
                                     if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
                                 }
                             }
-                        }, onLongClick = { selected = entry })
+                        }, onLongClick = { selectedKey = entry.key })
                     }
                 }
             }

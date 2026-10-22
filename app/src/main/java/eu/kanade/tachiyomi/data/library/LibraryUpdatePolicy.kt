@@ -16,6 +16,15 @@ object LibraryUpdatePolicy {
         else -> null
     }
 
+    /**
+     * Fetch dates for newly stored items in source order (newest first, highest value). The first sync of a
+     * library entry is dated before its library date, so the existing backlog never counts as an update.
+     */
+    fun fetchDates(count: Int, now: Long, dateAdded: Long, firstLibrarySync: Boolean): List<Long> {
+        val start = if (firstLibrarySync) minOf(now, dateAdded - 1) else now + count
+        return List(count) { start - it }
+    }
+
     fun <T> categories(items: List<T>, manual: Boolean, category: Long, included: Set<Long>, excluded: Set<Long>,
                        id: (T) -> Long, categoryId: (T) -> Long): List<T> {
         if (category != -1L) return items.filter { categoryId(it) == category }.distinctBy(id)
