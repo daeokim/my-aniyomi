@@ -9,8 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -123,6 +125,19 @@ class AnimeScreen(
             }
         }
 
+        var genreSearch by remember { mutableStateOf<eu.kanade.tachiyomi.data.recommendations.RelatedManga?>(null) }
+        genreSearch?.let { item ->
+            androidx.compose.material3.AlertDialog(onDismissRequest = { genreSearch = null },
+                title = { androidx.compose.material3.Text("검색할 제목 선택") },
+                text = { androidx.compose.foundation.lazy.LazyColumn {
+                    val aliases = (listOf(item.title) + item.aliases).distinct().take(12)
+                    items(aliases.size) { i -> androidx.compose.material3.TextButton(onClick = {
+                        genreSearch = null
+                        navigator.push(GlobalAnimeSearchScreen(aliases[i]))
+                    }) { androidx.compose.material3.Text(aliases[i]) } }
+                } }, confirmButton = { androidx.compose.material3.TextButton(onClick = { genreSearch = null }) { androidx.compose.material3.Text("닫기") } })
+        }
+
         AnimeScreen(
             state = successState,
             snackbarHostState = screenModel.snackbarHostState,
@@ -227,6 +242,18 @@ class AnimeScreen(
                 navigator.push(GlobalAnimeSearchScreen(relatedAnime.title))
             },
             relatedAnimeDisplayMode = screenModel.relatedAnimeDisplayMode,
+            relatedContent = {
+                eu.kanade.presentation.entries.manga.components.RelatedMangaSection(
+                    state = successState.genreRecommendations,
+                    onRetry = screenModel::retryGenreRecommendations,
+                    onChoose = screenModel::chooseGenreSeed,
+                    onReset = screenModel::resetGenreSeed,
+                    onOpen = { item -> scope.launch {
+                        val local = screenModel.genreLibraryMatches(item)
+                        if (local.size == 1) navigator.push(eu.kanade.tachiyomi.ui.entries.anime.AnimeScreen(local.single().id)) else genreSearch = item
+                    } },
+                )
+            },
         )
 
         val onDismissRequest = {

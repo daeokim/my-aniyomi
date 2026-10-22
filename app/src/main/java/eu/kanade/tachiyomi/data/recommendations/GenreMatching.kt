@@ -23,15 +23,21 @@ object GenreMatching {
 
     fun label(genre: String): String = labels[genre] ?: genre
 
-    /** With a known [seedCountry], same-country works come first (they are what installed sources can find). */
+    private data class Group(val otherCountry: Boolean, val sharedThemes: Int, val sharedGenres: Int, val genreUnion: Int)
+
+    /**
+     * With a known [seedCountry], same-country works come first (they are what installed sources can find).
+     * Shared theme tags (precomputed in [RelatedManga.commonTags]) then outrank broad genre overlap.
+     */
     fun rank(seed: Set<String>, candidates: List<RelatedManga>, seedCountry: String? = null): List<RelatedManga> {
         val groups = candidates.map { it.copy(commonGenres = seed intersect it.genres) }
             .filter { it.commonGenres.isNotEmpty() }
-            .groupBy { Triple(seedCountry != null && it.country != seedCountry, it.commonGenres.size, (seed union it.genres).size) }
+            .groupBy { Group(seedCountry != null && it.country != seedCountry, it.commonTags.size, it.commonGenres.size, (seed union it.genres).size) }
             .toList().sortedWith(
-                compareBy<Pair<Triple<Boolean, Int, Int>, List<RelatedManga>>> { it.first.first }
-                    .thenByDescending { it.first.second }
-                    .thenBy { it.first.third },
+                compareBy<Pair<Group, List<RelatedManga>>> { it.first.otherCountry }
+                    .thenByDescending { it.first.sharedThemes }
+                    .thenByDescending { it.first.sharedGenres }
+                    .thenBy { it.first.genreUnion },
             )
         return groups.flatMap { (_, tied) ->
             // Preserve each origin's score order, then deterministically merge the incomparable lists

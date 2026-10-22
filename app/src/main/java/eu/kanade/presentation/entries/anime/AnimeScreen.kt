@@ -166,6 +166,8 @@ fun AnimeScreen(
     onRelatedAnimeClicked: (Anime) -> Unit,
     onRelatedAnimeLongClicked: (Anime) -> Unit,
     relatedAnimeDisplayMode: LibraryDisplayMode,
+    // Personal fork: AniList genre recommendations above the episode list.
+    relatedContent: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     val onCopyTagToClipboard: (tag: String) -> Unit = {
@@ -223,6 +225,7 @@ fun AnimeScreen(
             onRelatedAnimeClicked = onRelatedAnimeClicked,
             onRelatedAnimeLongClicked = onRelatedAnimeLongClicked,
             relatedAnimeDisplayMode = relatedAnimeDisplayMode,
+            relatedContent = relatedContent,
         )
     } else {
         AnimeScreenLargeImpl(
@@ -268,6 +271,7 @@ fun AnimeScreen(
             onRelatedAnimeClicked = onRelatedAnimeClicked,
             onRelatedAnimeLongClicked = onRelatedAnimeLongClicked,
             relatedAnimeDisplayMode = relatedAnimeDisplayMode,
+            relatedContent = relatedContent,
         )
     }
 }
@@ -334,6 +338,7 @@ private fun AnimeScreenSmallImpl(
     onRelatedAnimeClicked: (Anime) -> Unit,
     onRelatedAnimeLongClicked: (Anime) -> Unit,
     relatedAnimeDisplayMode: LibraryDisplayMode,
+    relatedContent: @Composable () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val offsetGridPaddingPx = with(density) { GRID_PADDING.roundToPx() }
@@ -536,6 +541,8 @@ private fun AnimeScreenSmallImpl(
                         )
                     }
 
+                    item(key = "dtoon_related_anime", contentType = "dtoon_related_anime", span = { GridItemSpan(maxLineSpan) }) { relatedContent() }
+
                     item(
                         key = EntryScreenItem.ITEM_HEADER,
                         contentType = EntryScreenItem.ITEM_HEADER,
@@ -688,6 +695,7 @@ fun AnimeScreenLargeImpl(
     onRelatedAnimeClicked: (Anime) -> Unit,
     onRelatedAnimeLongClicked: (Anime) -> Unit,
     relatedAnimeDisplayMode: LibraryDisplayMode,
+    relatedContent: @Composable () -> Unit = {},
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
@@ -870,6 +878,8 @@ fun AnimeScreenLargeImpl(
                                 bottom = contentPadding.calculateBottomPadding(),
                             ),
                         ) {
+                            item(key = "dtoon_related_anime", contentType = "dtoon_related_anime", span = { GridItemSpan(maxLineSpan) }) { relatedContent() }
+
                             item(
                                 key = EntryScreenItem.ITEM_HEADER,
                                 contentType = EntryScreenItem.ITEM_HEADER,

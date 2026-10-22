@@ -32,6 +32,8 @@ data class RelatedManga(
     val score: Int = 0,
     val scoreSource: String = "direct",
     val country: String? = null,
+    val tags: Set<String> = emptySet(),
+    val commonTags: Set<String> = emptySet(),
 )
 
 sealed interface RelatedMangaState {
@@ -50,8 +52,16 @@ class RelatedMangaRepository(
     private val enabled: () -> Boolean = { true },
     private val requestScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val nowNanos: () -> Long = System::nanoTime,
+    /** Same flow for anime detail screens; only the AniList media type differs. */
+    private val anime: Boolean = false,
+    // Last, so callers and tests can pass the request as a trailing lambda.
     private val fetch: suspend (String, JsonObject) -> String = ::fetchPublicRecommendations,
 ) {
+    private val searchQuery = if (anime) SEARCH_QUERY.forAnime() else SEARCH_QUERY
+    private val relatedQuery = if (anime) RELATED_QUERY.forAnime() else RELATED_QUERY
+    private val genreQuery = if (anime) GENRE_QUERY.forAnime() else GENRE_QUERY
+    private val genreCountryQuery = if (anime) GENRE_COUNTRY_QUERY.forAnime() else GENRE_COUNTRY_QUERY
+    private val mediaType = if (anime) "ANIME" else "MANGA"
     private data class Cached(val time: Long, val state: RelatedMangaState)
     private val cache = linkedMapOf<String, Cached>()
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -98,8 +108,8 @@ class RelatedMangaRepository(
     private suspend fun loadUncached(title: String, linkedId: Int?): RelatedMangaState {
         val id = linkedId ?: run {
             if (normalizeTitle(title).isBlank()) return RelatedMangaState.Empty
-            val response = request(SEARCH_QUERY, buildJsonObject { put("search", cleanSearchTitle(title)) })
-            val candidates = response.Page?.media.orEmpty().filter(::isComic).distinctBy { it.id }
+            val response = request(searchQuery, buildJsonObject { put("search", cleanSearchTitle(title)) })
+            val candidates = response.Page?.media.orEmpty().filter(::isMedia).distinctBy { it.id }
             val matches = candidates.filter { candidate ->
                 candidate.names().any { normalizeTitle(it) == normalizeTitle(title) }
             }
@@ -110,12 +120,13 @@ class RelatedMangaRepository(
             }
             matches.single().id
         }
-        val media = request(RELATED_QUERY, buildJsonObject { put("id", id) }).Media
-            ?.takeIf { it.id == id && isComic(it) } ?: return RelatedMangaState.Empty
+        val media = request(relatedQuery, buildJsonObject { put("id", id) }).Media
+            ?.takeIf { it.id == id && isMedia(it) } ?: return RelatedMangaState.Empty
         val seedGenres = GenreMatching.normalize(media.genres)
         if (seedGenres.isEmpty()) return RelatedMangaState.GenreUnavailable
+        val seedTags = media.strongTags()
         val direct = media.recommendations?.nodes.orEmpty().sortedByDescending { it.rating }
-            .mapNotNull { node -> node.mediaRecommendation?.eligibleCard(id, seedGenres)?.copy(score = node.rating) }
+            .mapNotNull { node -> node.mediaRecommendation?.eligibleCard(id, seedGenres, seedTags)?.copy(score = node.rating) }
             .distinctBy { it.id }
         val all = direct.toMutableList()
         val country = media.countryOfOrigin?.takeIf { it.isNotBlank() }
@@ -124,11 +135,11 @@ class RelatedMangaRepository(
                 // Same-country works first (a Korean webtoon should not be filled with global manga hits);
                 // the unrestricted popularity query only tops up a thin same-country list.
                 if (country != null) {
-                    val local = genreFill(id, media.genres, seedGenres, country, "genre-country")
+                    val local = genreFill(id, media.genres, seedGenres, seedTags, country, "genre-country")
                     all += local
                     if (local.size < MIN_SAME_COUNTRY_FILL) {
                         try {
-                            all += genreFill(id, media.genres, seedGenres, null, "genre")
+                            all += genreFill(id, media.genres, seedGenres, seedTags, null, "genre")
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -136,7 +147,7 @@ class RelatedMangaRepository(
                         }
                     }
                 } else {
-                    all += genreFill(id, media.genres, seedGenres, null, "genre")
+                    all += genreFill(id, media.genres, seedGenres, seedTags, null, "genre")
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -145,27 +156,36 @@ class RelatedMangaRepository(
                 // Keep already validated recommendations when only the supplementary request fails.
             }
         }
-        val cards = GenreMatching.rank(seedGenres, all.distinctBy { it.id }, country).take(18)
+        // Genre-only fill shares a broad genre but not the work's themes (e.g. a light slice of life and a
+        // tragedy are both "Drama"). When enough candidates share a theme tag, drop fill items that share none.
+        val themed = all.distinctBy { it.id }.let { items ->
+            if (seedTags.isEmpty() || items.count { it.commonTags.isNotEmpty() } < MIN_THEMED) items
+            else items.filter { it.scoreSource == "direct" || it.commonTags.isNotEmpty() }
+        }
+        val cards = GenreMatching.rank(seedGenres, themed, country).take(18)
         return if (cards.isEmpty()) RelatedMangaState.NoMatches(seedGenres)
         else RelatedMangaState.Ready(cards, sameGenre = true)
     }
 
     // One bounded request; all seed genres are used again during final validation.
-    private suspend fun genreFill(id: Int, genres: List<String>, seedGenres: Set<String>, country: String?, origin: String): List<RelatedManga> =
-        request(if (country == null) GENRE_QUERY else GENRE_COUNTRY_QUERY, buildJsonObject {
+    private suspend fun genreFill(id: Int, genres: List<String>, seedGenres: Set<String>, seedTags: Set<String>, country: String?, origin: String): List<RelatedManga> =
+        request(if (country == null) genreQuery else genreCountryQuery, buildJsonObject {
             put("id", id)
             put("genres", buildJsonArray { genres.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
             if (country != null) put("country", country)
         }).Page?.media.orEmpty().mapIndexedNotNull { index, candidate ->
-            candidate.eligibleCard(id, seedGenres)?.copy(score = -index, scoreSource = origin)
+            candidate.eligibleCard(id, seedGenres, seedTags)?.copy(score = -index, scoreSource = origin)
         }
 
-    private fun Media.eligibleCard(seedId: Int, seedGenres: Set<String>): RelatedManga? {
-        if (id == seedId || !isComic(this) || isAdult) return null
+    private fun Media.eligibleCard(seedId: Int, seedGenres: Set<String>, seedTags: Set<String>): RelatedManga? {
+        if (id == seedId || !isMedia(this) || isAdult) return null
         val genres = GenreMatching.normalize(this.genres)
         val common = seedGenres intersect genres
-        return toCard()?.takeIf { common.isNotEmpty() }?.copy(genres = genres, commonGenres = common)
+        val tags = strongTags()
+        return toCard()?.takeIf { common.isNotEmpty() }?.copy(genres = genres, commonGenres = common, tags = tags, commonTags = seedTags intersect tags)
     }
+
+    private fun isMedia(media: Media) = media.id > 0 && media.type == mediaType && media.format != "NOVEL"
 
     private suspend fun request(query: String, variables: JsonObject): Data {
         currentCoroutineContext().ensureActive()
@@ -191,6 +211,7 @@ class RelatedMangaRepository(
 
     companion object {
         val shared by lazy { createRelatedMangaRepository() }
+        val animeShared by lazy { createRelatedMangaRepository(anime = true) }
 
         private fun cleanSearchTitle(title: String): String = Normalizer.normalize(title, Normalizer.Form.NFKC)
             .replace(Regex("[\\[(](완결|연재|단행본|컬러|웹툰|개정판|완전판)[)\\]]"), "").trim()
@@ -198,10 +219,14 @@ class RelatedMangaRepository(
         fun normalizeTitle(title: String): String = cleanSearchTitle(title)
             .lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
 
-        private fun isComic(media: Media) = media.id > 0 && media.type == "MANGA" && media.format != "NOVEL"
 
         private const val MIN_SAME_COUNTRY_FILL = 6
-        private const val FIELDS = "id type format isAdult countryOfOrigin title { english romaji native } synonyms coverImage { large } genres"
+        private const val MIN_THEMED = 6
+        // Tags ranked below this share are incidental on AniList; spoiler tags never drive a recommendation.
+        private const val MIN_TAG_RANK = 60
+        private const val FIELDS = "id type format isAdult countryOfOrigin title { english romaji native } synonyms coverImage { large } genres tags { name rank isMediaSpoiler }"
+
+        private fun String.forAnime() = replace("type: MANGA", "type: ANIME")
         internal val SEARCH_QUERY = "query DtoonMatch(\$search: String!) { Page(perPage: 5) { media(search: \$search, type: MANGA, format_not: NOVEL) { $FIELDS } } }"
         internal val RELATED_QUERY = "query DtoonRelated(\$id: Int!) { Media(id: \$id, type: MANGA) { $FIELDS recommendations(perPage: 25, sort: RATING_DESC) { nodes { rating mediaRecommendation { $FIELDS } } } } }"
         internal val GENRE_COUNTRY_QUERY = "query DtoonGenresByCountry(\$id: Int!, \$genres: [String], \$country: CountryCode) { Page(perPage: 18) { media(type: MANGA, format_not: NOVEL, id_not: \$id, genre_in: \$genres, countryOfOrigin: \$country, isAdult: false, sort: POPULARITY_DESC) { $FIELDS } } }"
@@ -221,6 +246,8 @@ class RelatedMangaRepository(
     @Serializable
     private data class Cover(val large: String? = null)
     @Serializable
+    private data class Tag(val name: String = "", val rank: Int = 0, val isMediaSpoiler: Boolean = false)
+    @Serializable
     private data class Recommendations(val nodes: List<Recommendation> = emptyList())
     @Serializable
     private data class Recommendation(val rating: Int = 0, val mediaRecommendation: Media? = null)
@@ -235,8 +262,11 @@ class RelatedMangaRepository(
         val synonyms: List<String> = emptyList(),
         val coverImage: Cover? = null,
         val genres: List<String> = emptyList(),
+        val tags: List<Tag> = emptyList(),
         val recommendations: Recommendations? = null,
     ) {
+        fun strongTags() = tags.filter { !it.isMediaSpoiler && it.rank >= MIN_TAG_RANK && it.name.isNotBlank() }
+            .map { it.name.lowercase(Locale.ROOT) }.toSet()
         fun names() = (listOfNotNull(title.native, title.english, title.romaji) + synonyms).filter { it.isNotBlank() }.distinct()
         fun toCard(): RelatedManga? {
             val names = names()

@@ -55,8 +55,9 @@ AND chapters._id = (
 )
 AND (
     (chapters.date_fetch > mangas.date_added AND chapters.date_fetch > :after)
-    -- Naver stores episodes while still locked, so one that opens keeps an old fetch date; its release date counts.
-    OR (mangas.source = 850164079243120301 AND chapters.date_upload > mangas.date_added AND chapters.date_upload > :after)
+    -- Naver works by release date: one latest open episode per ongoing work, like a release calendar
+    -- (locked episodes are stored early and keep old fetch dates, and a newly added work still shows its last release).
+    OR (mangas.source = 850164079243120301 AND chapters.date_upload > :after)
 )
 ORDER BY (
     CASE
@@ -103,8 +104,9 @@ AND chapters._id = (
 )
 AND (
     (chapters.date_fetch > mangas.date_added AND chapters.date_fetch > :after)
-    -- Naver stores episodes while still locked, so one that opens keeps an old fetch date; its release date counts.
-    OR (mangas.source = 850164079243120301 AND chapters.date_upload > mangas.date_added AND chapters.date_upload > :after)
+    -- Naver works by release date: one latest open episode per ongoing work, like a release calendar
+    -- (locked episodes are stored early and keep old fetch dates, and a newly added work still shows its last release).
+    OR (mangas.source = 850164079243120301 AND chapters.date_upload > :after)
 )
 ORDER BY (
     CASE

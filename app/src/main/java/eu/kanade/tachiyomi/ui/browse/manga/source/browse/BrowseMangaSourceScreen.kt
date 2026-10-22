@@ -186,7 +186,7 @@ data class BrowseMangaSourceScreen(
                 revision = screenModel.catalogRevision,
                 filterKey = screenModel.catalogSignature,
                 searchQuery = screenModel.catalogSearchQuery,
-                capability = screenModel.catalogCapability,
+                capability = screenModel.catalogCapability.forSource(sourceId, eu.kanade.tachiyomi.data.personal.ChapterAccess.NAVER),
                 sortAllowed = screenModel::catalogSortAllowed,
                 onTab = screenModel::selectCatalogTab,
                 onDay = screenModel::selectCatalogDay,
