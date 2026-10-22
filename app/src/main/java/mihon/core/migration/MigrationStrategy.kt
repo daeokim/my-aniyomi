@@ -3,7 +3,7 @@ package mihon.core.migration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 
 interface MigrationStrategy {
     operator fun invoke(migrations: List<Migration>): Deferred<Boolean>
@@ -22,11 +22,11 @@ class DefaultMigrationStrategy(
 
         val chain = migrationJobFactory.create(migrations)
 
-        launch {
-            if (chain.await()) migrationCompletedListener()
-        }.start()
-
-        chain
+        async {
+            val migrated = chain.await()
+            if (migrated) migrationCompletedListener()
+            migrated
+        }
     }
 }
 
