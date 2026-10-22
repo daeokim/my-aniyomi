@@ -109,7 +109,13 @@ class BackupCreator(
             } else {
                 emptyList()
             }
-            val backupManga = backupMangas(getMangaFavorites.await() + nonFavoriteManga, options)
+            val mangas = getMangaFavorites.await() + nonFavoriteManga
+            val backupManga = backupMangas(mangas, options)
+            if (options.appSettings) {
+                eu.kanade.tachiyomi.data.personal.EpisodeMappingStore.migrateBeforeBackup(
+                    mangas, getAnimeFavorites.await() + nonFavoriteAnime,
+                )
+            }
 
             val backup = Backup(
                 backupManga = backupManga,

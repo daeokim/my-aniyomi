@@ -166,7 +166,7 @@ abstract class MangaSearchScreenModel(
                         }
 
                         if (isActive) {
-                            updateItem(source, MangaSearchItemResult.Success(titles))
+                            updateItem(source, MangaSearchItemResult.Success(titles, hasNextPage = page.hasNextPage))
                         }
                     } catch (e: Exception) {
                         if (isActive) {
@@ -224,9 +224,11 @@ sealed interface MangaSearchItemResult {
 
     data class Success(
         val result: List<Manga>,
+        val hasNextPage: Boolean = false,
     ) : MangaSearchItemResult {
+        val singleCompleteResult get() = if (hasNextPage) null else result.singleOrNull()
         val isEmpty: Boolean
-            get() = result.isEmpty()
+            get() = result.isEmpty() && !hasNextPage
     }
 
     fun isVisible(onlyShowHasResults: Boolean): Boolean {

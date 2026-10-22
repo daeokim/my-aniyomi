@@ -95,11 +95,18 @@ class BrowseMangaSourceScreenModel(
         private set
     var catalogDay by mutableStateOf(PersonalStore.number("catalog_day:manga:$sourceId", CatalogPolicy.today()).get())
         private set
+    val catalogSearchQuery get() = (state.value.listing as? Listing.Search)?.query.orEmpty()
     val catalogSignature get() = PersonalStore.key(state.value.catalogFiltersSnapshot + (state.value.listing as? Listing.Search)?.query.orEmpty())
     private var catalogScope = kotlinx.coroutines.CoroutineScope(screenModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(screenModelScope.coroutineContext[kotlinx.coroutines.Job]))
     private var catalogContext: Pair<String, String>? = null
     private val catalogFlows = linkedMapOf<CatalogRequest, Flow<PagingData<StateFlow<Manga>>>>()
     val catalogCapability get() = MangaCatalogFilters.capabilities((source as? CatalogueSource)?.getFilterList() ?: FilterList(), (source as? CatalogueSource)?.supportsLatest == true)
+    fun catalogSortAllowed(tab: CatalogTab): Boolean {
+        val filters = (source as? CatalogueSource)?.getFilterList() ?: return true
+        val native = (state.value.listing as? Listing.Search)?.query.isNullOrBlank() &&
+            state.value.catalogFiltersSnapshot == MangaCatalogFilters.snapshot(filters)
+        return CatalogPolicy.sortCombinationAllowed(tab, native, MangaCatalogFilters.supportsSort(filters, tab))
+    }
     fun selectCatalogTab(tab: Int) { catalogTab = tab; PersonalStore.number("catalog_tab:manga:$sourceId").set(tab) }
     fun selectCatalogDay(day: Int) { catalogDay = day; PersonalStore.number("catalog_day:manga:$sourceId").set(day) }
     fun catalogItems(tab: CatalogTab, day: Int): Flow<PagingData<StateFlow<Manga>>> {
@@ -129,7 +136,7 @@ class BrowseMangaSourceScreenModel(
                 data.map { remote ->
                     val local = catalogMutex.withLock { networkToLocalManga.await(remote.toDomainManga(sourceId)) }
                     getManga.subscribe(local.url, local.source).filterNotNull().stateIn(scope)
-                }.filter { !hideInLibraryItems || !it.value.favorite }
+                }.filter { query.isNotBlank() || !hideInLibraryItems || !it.value.favorite }
             }.cachedIn(scope)
         }
     }

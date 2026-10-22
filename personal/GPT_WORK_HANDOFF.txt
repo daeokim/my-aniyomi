@@ -1,0 +1,68 @@
+첨부한 Dtoon 수정 소스를 검토하고, 테스트·빌드까지 완료해 주세요. 한국어로 답하세요.
+
+[첨부]
+- Dtoon-update-search-fix-v2-source.zip: 수정된 전체 소스
+- Dtoon-update-search-fix-v2.patch: 사용자가 처음 제공한 my-aniyomi-main.zip 기준 변경만 포함
+- 원래 APK Dtoon-feature-patch4-fold8.apk도 함께 제공하면 서명 인증서 비교에 사용하세요.
+ZIP과 패치는 대체 수단입니다. 수정 ZIP에 패치를 다시 적용하지 마세요.
+
+[프로젝트]
+비공개 GitHub daeokim/my-aniyomi, Kotlin/Compose Aniyomi 포크 Dtoon.
+applicationId xyz.jmir.tachiyomi.mi, versionName 0.18.2.1-dtoon-fold8.4, versionCode 13204.
+기존 앱과 같은 패키지 및 기존 개인 서명으로 업데이트하는 것이 요구사항입니다.
+저장소 공개 전환, 기존 앱 삭제, 임의 신규 서명 키 생성은 하지 마세요.
+ZIP에는 Git 이력과 기존 개인 서명 키가 없습니다. 원격 접근 인증이 있다고 가정하지 마세요.
+
+[사용자 요구]
+1. 만화 업데이트 탭에서 보관함 등록 작품당 최신 회차 한 개만 표시. 다른 회차와 읽기 기록은 보존.
+2. 네이버웹툰에서 검색 취소 후 만화 목록이 복원되지 않는 문제 수정.
+현재 해석은 읽음 여부와 관계없이 소스의 최신 회차 한 개입니다. 미독 회차만 표시하는 요구와 혼동하지 마세요.
+
+[반영한 변경]
+- data/src/main/sqldelight/view/updatesView.sq의 getRecentUpdates에서 source_order ASC, _id DESC로 작품별 최신 한 개를 선택한 뒤 LIMIT 500 적용.
+- favorite=1, 등록 이후 수집, 최근 3개월 조건 유지. 다른 read-status 쿼리와 자동 다운로드/알림 정책은 변경하지 않음.
+- BrowseMangaSourceScreenModel.State.withToolbarQuery로 검색창 닫기(null)/초기화(빈 문자열) 시 실제 Listing.Search.query도 null로 복원. 입력 중에는 제출된 쿼리 유지.
+- StateFlow.update 안에 부수 효과 없음.
+- BrowseMangaSourceScreen에서 검색창 닫기 및 Android BackHandler가 검색 상태 초기화.
+- SourceCatalog feed remember에 filterKey 추가. 공용 파일이므로 애니에도 영향 있음.
+- 탭/요일/필터 유지. 현재 캐시 scope는 검색 조건 변경 때 취소 후 재생성하므로 실제 페이징 수명 검증 필요.
+
+[검증 완료 / 미완료]
+- 생산 SQL을 SQLite에서 실행하는 회귀 테스트는 최초 8개 중 수정 전 6개 실패. 이후 날짜/등록 조건 사례 2개 추가하여 현재 10개 모두 통과.
+- 기존 정적 통합 테스트 5개 통과.
+- 신규 검색 상태 JUnit 6개 작성. 실행은 미완료.
+- Android 현 환경에 Java/SDK가 없어 전체 컴파일·JUnit·APK 생성·네이버웹툰 실기기 검증은 미완료.
+- 쿼리 실행 계획/소규모 fixture 확인 결과 현 쿼리 유지. 인덱스·마이그레이션은 필수 근거 없으면 추가하지 말 것.
+- 별도 코드 검토와 그룹 Claude/Gemini 의견을 검토함. Claude의 마이그레이션 우려는 CREATE VIEW 원본 동일 확인으로 해소. 실제 변경은 getRecentUpdates 실행문뿐이어서 이번 수정에 마이그레이션 불필요.
+- AndroidConfig.MIN_SDK=26, 윈도 함수 미사용. SQLDelight 생성과 Android 컴파일은 아직 실행 전.
+- 전체 선택/읽음/다운로드 등은 표시된 최신 회차만 대상. 배지는 MangaLibraryUpdateJob에서 newChapters.size 누적이므로 화면 작품 수와 다를 수 있음. 이번에는 기존 배지/알림 정책 유지.
+- Gemini 제안 자동 서명 CI는 선택 후속 작업이며 아직 반영하지 않음. 목표 동작과 실기기 검증 완료를 구분할 것.
+
+[진행 방식]
+프로젝트 전체 구조와 관련 지침 먼저 파악 → 최소 수정 및 기존 스타일 유지 → 의미 있는 테스트 → 변경·위험·추가 개선 설명.
+1. 현재 수정의 타입 오류, SQLDelight 쿼리 생성, Kotlin/Compose 컴파일을 확인하고 실패 원인을 수정.
+2. 검색 결과 있음/없음 → X 초기화/닫기/Android 뒤로가기 → 인기/최신/요일/완결 복원, 재검색, 빠른 취소, 회전, 탭 전환을 검증. 실제 Pager/Flow 재연결 테스트 보완. 같은 SourceCatalog를 쓰는 애니 화면 회귀도 확인.
+3. 최신 회차가 읽음인 경우, 구회차를 뒤늦게 수집한 경우, 미등록 작품 제외, 500개 제한, 최신 회차가 기존 날짜 범위 밖인 경우를 유지 검증.
+4. 네이버웹툰만의 확장/로그인/서버 오류 가능성은 실기기 증거로 별도 판단. 앱 상태 수정만으로 해결 확정하지 말 것.
+5. 실행: bash tools/test-personal.sh
+   bash gradlew :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
+   필요한 JDK 17, Android SDK 36, Build Tools 35.0.1을 확인. ZIP Git 메타데이터 부재로 빌드 메타데이터 함수가 실패하면 원본 getGitSha/getCommitCount 구현과 로그 확인 후 최소 조치.
+6. 실제 Actions 파일 .github/workflows/build_push.yml 확인. 현재 비공개 main push 또는 수동 실행이며 결과물 private-unsigned-apk-and-tools는 미서명 APK임.
+7. tools/build-personal.py는 키가 없으면 새 키를 생성할 수 있으니 기존 업데이트용 키 확보 전 무심코 실행하지 말 것. 기존 키가 없으면 미서명 APK와 남은 단계를 전달하고 설치 완료로 주장하지 말 것.
+8. 사용자의 기존 개인 키를 안전하게 확보한 경우에만 기존 APK와 인증서 지문을 비교해 서명. 버전 코드는 원격 최신 상태와 설치본을 확인 후 결정. 변경 소스/패치/테스트 결과/APK(서명 여부 표시)를 제공.
+9. 저장소 push, 게시, 설치 등 외부 변경은 사용자 승인 범위를 확인하고 수행. 인증 토큰/서명 비밀번호를 대화나 로그로 출력하지 말 것.
+
+최종 답변에는 바꾼 점, 실제 실행한 검사, 실행하지 못한 검사, 설치 가능한 APK 여부, 잔여 위험과 다음 단계를 구분해 주세요.
+
+[검토 후 확정한 인계 보완]
+- 작업 브랜치에서 패치 적용/검증하고 Actions 수동 실행 후 main 병합을 권장. 웹 업로드로 폴더 경로를 잃지 않도록 주의.
+- 복합 인덱스/스키마 migration은 현재 변경에 필요하지 않음. 실제 측정이나 새 스키마 변경 근거가 생기면 별도로 검토.
+- 자동 서명은 기존 keystore 확보 및 사용자 승인 후 Secrets 사용을 검토. Base64는 암호화가 아니며 키를 소스/아티팩트/로그에 포함하지 말 것.
+- 배지를 작품 수로 맞추는 개선은 후속 선택사항. 이번 요구에 자동으로 확대하지 말 것.
+
+[최종 그룹 검토에서 추가 보완한 내용]
+- 최신 회차 하위 SELECT는 날짜/등록 조건으로 제한하지 않은 전체 chapters에서 source_order 순서로 선택합니다. 바깥 view와 WHERE는 선택된 최신 행이 조건에 부합하는지 판단하므로 구회차로 fallback하지 않습니다.
+- 기존 최근 3개월은 dateUpload 기준입니다. dateFetch로 바꾸지 않았습니다. 두 기준을 혼동하지 말고 테스트/설명에 명시.
+- Claude가 발견한 적용 전 필터 변경 문제를 만화 모델에서 보완했습니다. State.catalogFiltersSnapshot 문자열은 초기 복원/search(filters)/searchGenre 시에만 갱신. catalogSignature/catalogItems는 draft state.filters 대신 이 snapshot 사용. setFilters/resetFilters와 검색 취소는 적용 snapshot을 변경하지 않습니다.
+- 관련 Kotlin JUnit은 총 6개이며 컴파일/실행 미완료. snapshot이 문자열로 안정적이어도 실제 Compose/Pager 연동 확인은 필요합니다.
+- 공용 SourceCatalog 변경은 애니에도 영향을 주지만 애니 모델 자체의 검색 취소/필터 편집 문제가 해결됐다고 주장하지 말고 회귀 확인.

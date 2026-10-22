@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.library.manga
 
 import android.content.Context
+import eu.kanade.tachiyomi.data.library.LibraryUpdatePolicy
 import android.content.pm.ServiceInfo
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -56,10 +57,6 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_CHARGING
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_NETWORK_NOT_METERED
 import tachiyomi.domain.library.service.LibraryPreferences.Companion.DEVICE_ONLY_ON_WIFI
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_HAS_UNVIEWED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_NON_COMPLETED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_NON_VIEWED
-import tachiyomi.domain.library.service.LibraryPreferences.Companion.ENTRY_OUTSIDE_RELEASE_PERIOD
 import tachiyomi.domain.source.manga.model.SourceNotInstalledException
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.i18n.MR
@@ -90,6 +87,8 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
     private val notifier = MangaLibraryUpdateNotifier(context)
 
     private var mangaToUpdate: List<LibraryManga> = mutableListOf()
+
+    private val manualUpdate get() = tags.contains(WORK_NAME_MANUAL)
 
     override suspend fun doWork(): Result {
         if (tags.contains(WORK_NAME_AUTO)) {
@@ -157,71 +156,37 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
     private suspend fun addMangaToQueue(categoryId: Long) {
         val libraryManga = getLibraryManga.await()
 
-        val listToUpdate = if (categoryId != -1L) {
-            libraryManga.filter { it.category == categoryId }
-        } else {
-            val categoriesToUpdate = libraryPreferences.mangaUpdateCategories().get().map { it.toLong() }
-            val includedManga = if (categoriesToUpdate.isNotEmpty()) {
-                libraryManga.filter { it.category in categoriesToUpdate }
-            } else {
-                libraryManga
-            }
-
-            val categoriesToExclude = libraryPreferences.mangaUpdateCategoriesExclude().get().map { it.toLong() }
-            val excludedMangaIds = if (categoriesToExclude.isNotEmpty()) {
-                libraryManga.filter { it.category in categoriesToExclude }.map { it.manga.id }
-            } else {
-                emptyList()
-            }
-
-            includedManga
-                .filterNot { it.manga.id in excludedMangaIds }
-                .distinctBy { it.manga.id }
-        }
+        val listToUpdate = LibraryUpdatePolicy.categories(
+            libraryManga, manualUpdate, categoryId,
+            libraryPreferences.mangaUpdateCategories().get().map { it.toLong() }.toSet(),
+            libraryPreferences.mangaUpdateCategoriesExclude().get().map { it.toLong() }.toSet(),
+            id = { it.manga.id }, categoryId = { it.category },
+        )
 
         val restrictions = libraryPreferences.autoUpdateItemRestrictions().get()
         val skippedUpdates = mutableListOf<Pair<Manga, String?>>()
         val (_, fetchWindowUpperBound) = mangaFetchInterval.getWindow(ZonedDateTime.now())
 
         mangaToUpdate = listToUpdate
-            .filter {
-                when {
-                    it.manga.updateStrategy != UpdateStrategy.ALWAYS_UPDATE -> {
-                        skippedUpdates.add(
-                            it.manga to context.stringResource(MR.strings.skipped_reason_not_always_update),
-                        )
-                        false
+            .distinctBy { it.manga.id }
+            .filter { entry ->
+                val reason = LibraryUpdatePolicy.skip(
+                    manual = manualUpdate, alwaysUpdate = entry.manga.updateStrategy == UpdateStrategy.ALWAYS_UPDATE,
+                    completed = entry.manga.status.toInt() == SManga.COMPLETED,
+                    unviewed = entry.unreadCount, total = entry.totalChapters, started = entry.hasStarted,
+                    nextUpdate = entry.manga.nextUpdate, windowEnd = fetchWindowUpperBound, restrictions = restrictions,
+                )
+                if (reason != null) {
+                    val message = when (reason) {
+                        LibraryUpdatePolicy.Skip.SOURCE -> MR.strings.skipped_reason_not_always_update
+                        LibraryUpdatePolicy.Skip.COMPLETED -> MR.strings.skipped_reason_completed
+                        LibraryUpdatePolicy.Skip.UNVIEWED -> MR.strings.skipped_reason_not_caught_up
+                        LibraryUpdatePolicy.Skip.NOT_STARTED -> MR.strings.skipped_reason_not_started
+                        LibraryUpdatePolicy.Skip.RELEASE_PERIOD -> MR.strings.skipped_reason_not_in_release_period
                     }
-
-                    ENTRY_NON_COMPLETED in restrictions && it.manga.status.toInt() == SManga.COMPLETED -> {
-                        skippedUpdates.add(
-                            it.manga to context.stringResource(MR.strings.skipped_reason_completed),
-                        )
-                        false
-                    }
-
-                    ENTRY_HAS_UNVIEWED in restrictions && it.unreadCount != 0L -> {
-                        skippedUpdates.add(
-                            it.manga to context.stringResource(MR.strings.skipped_reason_not_caught_up),
-                        )
-                        false
-                    }
-
-                    ENTRY_NON_VIEWED in restrictions && it.totalChapters > 0L && !it.hasStarted -> {
-                        skippedUpdates.add(
-                            it.manga to context.stringResource(MR.strings.skipped_reason_not_started),
-                        )
-                        false
-                    }
-
-                    ENTRY_OUTSIDE_RELEASE_PERIOD in restrictions && it.manga.nextUpdate > fetchWindowUpperBound -> {
-                        skippedUpdates.add(
-                            it.manga to context.stringResource(MR.strings.skipped_reason_not_in_release_period),
-                        )
-                        false
-                    }
-                    else -> true
+                    skippedUpdates.add(entry.manga to context.stringResource(message))
                 }
+                reason == null
             }
             .sortedBy { it.manga.title }
 
@@ -356,7 +321,7 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
         // to get latest data so it doesn't get overwritten later on
         val dbManga = getManga.await(manga.id)?.takeIf { it.favorite } ?: return emptyList()
 
-        return syncChaptersWithSource.await(chapters, dbManga, source, false, fetchWindow)
+        return syncChaptersWithSource.await(chapters, dbManga, source, manualUpdate, fetchWindow)
     }
 
     private suspend fun withUpdateNotification(

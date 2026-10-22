@@ -23,7 +23,7 @@ ORDER BY date_fetch DESC;
 getRecentUpdates:
 SELECT *
 FROM updatesView
-WHERE dateUpload > :after
+WHERE datefetch > :after
 -- Sources return chapters newest first. Choose before LIMIT so backlog cannot hide other works.
 AND chapterId = (
     SELECT latest._id
@@ -39,6 +39,6 @@ getUpdatesByReadStatus:
 SELECT *
 FROM updatesView
 WHERE read = :read
-AND dateUpload > :after
+AND datefetch > :after
 
 LIMIT :limit;

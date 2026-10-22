@@ -207,10 +207,13 @@ internal class HttpPageLoader(
 
             page.stream = { chapterCache.getImageFile(imageUrl).inputStream() }
             page.loadError = null
+            page.connectionError = null
+            page.connectionRetry.reset()
             eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${source.id}", "이미지", null)
             page.status = Page.State.READY
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
+            page.connectionError = e
             page.loadError = eu.kanade.tachiyomi.data.personal.SourceHealth.message("이미지", e)
             eu.kanade.tachiyomi.data.personal.SourceHealth.record("manga:${source.id}", "이미지", e)
             page.status = Page.State.ERROR

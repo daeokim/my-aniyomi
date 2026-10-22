@@ -9,3 +9,4 @@ java com.sun.tools.javac.Main -d "$test_output" \
 java -cp "$test_output" FoldLayoutPolicyTest
 python3 "$task_root/personal/tests/test_contracts.py"
 python3 "$task_root/personal/tests/test_latest_manga_updates.py"
+python3 "$task_root/personal/tests/test_anime_updates.py"

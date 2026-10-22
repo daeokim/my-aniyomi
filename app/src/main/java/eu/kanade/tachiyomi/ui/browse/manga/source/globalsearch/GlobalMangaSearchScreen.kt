@@ -51,7 +51,7 @@ class GlobalMangaSearchScreen(
                 when (val result = state.items.values.singleOrNull()) {
                     MangaSearchItemResult.Loading -> return@LaunchedEffect
                     is MangaSearchItemResult.Success -> {
-                        val manga = result.result.singleOrNull()
+                        val manga = result.singleCompleteResult
                         if (manga != null) {
                             navigator.replace(MangaScreen(manga.id, true))
                         } else {

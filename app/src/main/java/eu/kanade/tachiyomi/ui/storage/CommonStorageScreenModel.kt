@@ -5,6 +5,8 @@ import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.presentation.more.storage.StorageItem
 import eu.kanade.presentation.more.storage.StorageScreenState
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,58 +48,34 @@ abstract class CommonStorageScreenModel<T>(
                 flow4 = categories(hideHiddenCategories),
                 flow5 = selectedCategory,
                 transform = { _, _, libraries, categories, selectedCategory ->
-                    // initialize the screen with an empty state
-                    mutableState.update {
-                        StorageScreenState.Success(
-                            selectedCategory = selectedCategory,
-                            categories = listOf(AllCategory, *categories.toTypedArray()),
-                            items = emptyList(),
-                        )
-                    }
-
-                    val distinctLibraries = libraries.distinctBy {
-                        it.getId()
-                    }.filter { item ->
-                        val categoryId = item.getCategoryId()
-                        when {
-                            // if all is selected, we want to make sure to include all entries
-                            // from only visible categories
-                            selectedCategory == AllCategory -> categories.find {
-                                it.id == categoryId
-                            } != null
-
-                            // else include only entries from the selected category
-                            else -> categoryId == selectedCategory.id
-                        }
-                    }
-
-                    distinctLibraries.forEach { library ->
-                        val random = Random(library.getId())
-                        val item = StorageItem(
-                            id = library.getId(),
-                            title = library.getTitle(),
-                            size = library.getDownloadSize(),
-                            thumbnail = library.getThumbnail(),
-                            entriesCount = library.getDownloadCount(),
-                            color = Color(
-                                random.nextInt(255),
-                                random.nextInt(255),
-                                random.nextInt(255),
-                            ),
-                        )
-
-                        mutableState.update { state ->
-                            when (state) {
-                                is StorageScreenState.Success -> state.copy(
-                                    items = (state.items + item).sortedByDescending { it.size },
-                                )
-
-                                else -> state
-                            }
-                        }
-                    }
+                    Triple(libraries, categories, selectedCategory)
                 },
-            ).collectLatest {}
+            ).collectLatest { (libraries, categories, category) ->
+                fun publish(items: List<StorageItem>) {
+                    // A new selection can arrive before combine emits its next value.
+                    if (selectedCategory.value != category) return
+                    mutableState.value = StorageScreenState.Success(
+                        selectedCategory = category,
+                        categories = listOf(AllCategory, *categories.toTypedArray()),
+                        items = items,
+                    )
+                }
+                publish(emptyList())
+                val visibleIds = categories.map { it.id }.toSet()
+                val selected = libraries.distinctBy { it.getId() }.filter {
+                    if (category == AllCategory) it.getCategoryId() in visibleIds else it.getCategoryId() == category.id
+                }
+                val items = StorageCalculation.calculate(selected, sizeOf = { it.getDownloadSize() }) { library, size ->
+                    val random = Random(library.getId())
+                    StorageItem(
+                        id = library.getId(), title = library.getTitle(), size = size,
+                        thumbnail = library.getThumbnail(), entriesCount = library.getDownloadCount(),
+                        color = Color(random.nextInt(255), random.nextInt(255), random.nextInt(255)),
+                    )
+                }
+                currentCoroutineContext().ensureActive()
+                publish(items)
+            }
         }
     }
 

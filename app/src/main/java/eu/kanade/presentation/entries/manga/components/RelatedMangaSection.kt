@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import eu.kanade.tachiyomi.data.recommendations.RelatedManga
 import eu.kanade.tachiyomi.data.recommendations.RelatedMangaState
+import eu.kanade.tachiyomi.data.recommendations.GenreMatching
 
 /** Kept above chapter lists in both phone and two-panel layouts; never blocks reading. */
 @Composable
@@ -56,12 +57,15 @@ fun RelatedMangaSection(
             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("연관 추천작", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = onReset) { Text("연결 변경") }
-            IconButton(onClick = onRetry, enabled = state !is RelatedMangaState.Loading) {
+            IconButton(onClick = onRetry, enabled = state !is RelatedMangaState.Loading && state !is RelatedMangaState.Disabled) {
                 Icon(Icons.Outlined.Refresh, contentDescription = "추천작 새로고침")
             }
         }
         when (state) {
             RelatedMangaState.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            RelatedMangaState.Disabled -> Text("외부 추천 조회가 꺼져 있습니다.", Modifier.padding(16.dp))
+            RelatedMangaState.GenreUnavailable -> Text("기준 작품의 장르 정보가 없어 같은 장르 추천을 표시할 수 없습니다.", Modifier.padding(16.dp))
+            is RelatedMangaState.NoMatches -> Text("공통 장르가 있는 추천작을 찾지 못했습니다.", Modifier.padding(16.dp))
             RelatedMangaState.Empty -> Text(
                 "연결된 작품이나 등록된 추천작을 찾지 못했습니다.",
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -126,6 +130,15 @@ private fun RelatedCovers(items: List<RelatedManga>, onClick: (RelatedManga) -> 
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White,
                             maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (item.commonGenres.isNotEmpty()) {
+                        Text(
+                            "${item.commonGenres.take(2).joinToString(" · ", transform = GenreMatching::label)} / ${item.origin}",
+                            modifier = Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }

@@ -52,8 +52,19 @@ object MangaCatalogFilters {
         },
         latest = latest,
     )
+    fun supportsSort(filters: FilterList, tab: CatalogTab): Boolean {
+        val names = CatalogPolicy.sortNames(tab)
+        return flatten(filters).any { (_, f) ->
+            when (f) {
+                is Filter.Select<*> -> CatalogPolicy.isSort(f.name) && f.values.any { it.toString().trim().lowercase() in names }
+                is Filter.Sort -> f.values.any { it.trim().lowercase() in names }
+                else -> false
+            }
+        }
+    }
     fun apply(filters: FilterList, request: CatalogRequest): FilterList {
         restore(filters, request.filters)
+        if (request.search.isNotBlank()) return filters // Search uses explicit filters, not the selected catalogue tab.
         flatten(filters).forEach { (_, f) ->
             val sortNames = when (request.tab) {
                 CatalogTab.POPULAR -> setOf("인기순", "인기", "조회순", "조회수순", "popular", "popularity", "views")

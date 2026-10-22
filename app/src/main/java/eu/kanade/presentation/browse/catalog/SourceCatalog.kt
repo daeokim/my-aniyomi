@@ -12,6 +12,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import eu.kanade.tachiyomi.util.system.ConnectionRetry
+import eu.kanade.tachiyomi.util.system.stableConnectionChanges
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.*
 import androidx.compose.ui.layout.ContentScale
@@ -38,7 +44,9 @@ fun <T : Any> SourceCatalog(
     initialDay: Int,
     revision: Int,
     filterKey: String,
+    searchQuery: String,
     capability: CatalogCapability,
+    sortAllowed: (CatalogTab) -> Boolean,
     onTab: (Int) -> Unit,
     onDay: (Int) -> Unit,
     onFilter: () -> Unit,
@@ -55,32 +63,48 @@ fun <T : Any> SourceCatalog(
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { onTab(it); showFilter = true } }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         Column {
-            TabRow(selectedTabIndex = pager.currentPage) {
-                CatalogTab.entries.forEachIndexed { i, tab ->
-                    Tab(selected = pager.currentPage == i, onClick = { scope.launch { pager.animateScrollToPage(i) } }, text = { Text(tab.label) })
+            if (searchQuery.isNotBlank()) {
+                Text("검색 결과 · 소스 검색순", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                val queryKey = "$sourceKey:search:$filterKey"
+                holder.SaveableStateProvider(queryKey) {
+                    val feed = remember(searchQuery, filterKey, revision) { itemsFor(CatalogTab.POPULAR, 0) }
+                    CatalogGridPage(sourceKey, queryKey, true, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
                 }
-            }
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { CatalogTab.entries[it].name }) { page ->
-                val tab = CatalogTab.entries[page]
-                Column(Modifier.fillMaxSize()) {
-                    if (tab == CatalogTab.WEEKDAY) {
-                        FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, label ->
-                                FilterChip(selected = day == i + 1, onClick = { day = i + 1; onDay(day); showFilter = true }, label = { Text(label) })
+            } else {
+                TabRow(selectedTabIndex = pager.currentPage) {
+                    CatalogTab.entries.forEachIndexed { i, tab ->
+                        Tab(selected = pager.currentPage == i, onClick = { scope.launch { pager.animateScrollToPage(i) } }, text = { Text(tab.label) })
+                    }
+                }
+                HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { CatalogTab.entries[it].name }) { page ->
+                    val tab = CatalogTab.entries[page]
+                    Column(Modifier.fillMaxSize()) {
+                        if (tab == CatalogTab.WEEKDAY) {
+                            FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, label ->
+                                    FilterChip(selected = day == i + 1, onClick = { day = i + 1; onDay(day); showFilter = true }, label = { Text(label) })
+                                }
                             }
                         }
-                    }
-                    if (!capability.supports(tab)) {
-                        Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                            Text("이 소스는 ${tab.label} 목록을 제공하지 않습니다.")
-                            Text("소스에서 제공하는 필터는 우하단 필터에서 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else {
-                        val dayKey = if (tab == CatalogTab.WEEKDAY) day else 0
-                        val queryKey = "$sourceKey:${tab.name}:$dayKey:$filterKey"
-                        holder.SaveableStateProvider(queryKey) {
-                            val feed = remember(tab, dayKey, revision, filterKey) { itemsFor(tab, day) }
-                            CatalogGridPage(sourceKey, queryKey, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
+                        if (!capability.supports(tab)) {
+                            Column(Modifier.fillMaxWidth().padding(24.dp)) {
+                                Text("이 소스는 ${tab.label} 목록을 제공하지 않습니다.")
+                                Text("소스에서 제공하는 필터는 우하단 필터에서 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        } else {
+                            if (!sortAllowed(tab)) {
+                                Text(
+                                    "필터 결과 · 소스 검색순 (${tab.label} 정렬 미지원)",
+                                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                            val dayKey = if (tab == CatalogTab.WEEKDAY) day else 0
+                            val queryKey = "$sourceKey:${tab.name}:$dayKey:$filterKey"
+                            holder.SaveableStateProvider(queryKey) {
+                                val feed = remember(tab, dayKey, revision, filterKey) { itemsFor(tab, day) }
+                                CatalogGridPage(sourceKey, queryKey, pager.settledPage == page, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
+                            }
                         }
                     }
                 }
@@ -97,6 +121,7 @@ fun <T : Any> SourceCatalog(
 private fun <T : Any> CatalogGridPage(
     sourceKey: String,
     queryKey: String,
+    active: Boolean,
     items: LazyPagingItems<StateFlow<T>>,
     entryKey: (T) -> String,
     onWeb: () -> Unit,
@@ -132,6 +157,21 @@ private fun <T : Any> CatalogGridPage(
         }
     }
     val error = (items.loadState.refresh as? LoadState.Error) ?: (items.loadState.append as? LoadState.Error)
+    val connectionRetry = remember(queryKey) { ConnectionRetry() }
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val latestError by rememberUpdatedState(error?.error)
+    LaunchedEffect(queryKey, active, lifecycle) {
+        if (active) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            context.stableConnectionChanges().collect {
+                val busy = items.loadState.refresh is LoadState.Loading || items.loadState.append is LoadState.Loading
+                if (connectionRetry.claim(latestError, busy)) items.retry()
+            }
+        }
+    }
+    LaunchedEffect(error, items.loadState.refresh, items.loadState.append) {
+        if (error == null && items.loadState.refresh !is LoadState.Loading && items.loadState.append !is LoadState.Loading) connectionRetry.reset()
+    }
     LaunchedEffect(error, items.itemCount > 0) {
         if (error != null) SourceHealth.record(sourceKey, "목록", error.error)
         else if (items.itemCount > 0) SourceHealth.record(sourceKey, "목록", null)
@@ -149,6 +189,7 @@ private fun <T : Any> CatalogGridPage(
                 }
             }
     }
+    val manualRetry = items::retry
     var showHealth by remember { mutableStateOf(false) }
     if (showHealth) AlertDialog(onDismissRequest = { showHealth = false },
         title = { Text("소스 상태") }, text = { Text(SourceHealth.summary(sourceKey)) },
@@ -161,7 +202,7 @@ private fun <T : Any> CatalogGridPage(
         if (error != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text(SourceHealth.message("목록", error.error), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = items::retry) { Text("재시도") }
+                TextButton(onClick = { connectionRetry.reset(); manualRetry() }) { Text("재시도") }
                 TextButton(onClick = onWeb) { Text("웹") }
             }
         }

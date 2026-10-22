@@ -51,6 +51,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.map
 import eu.kanade.tachiyomi.data.recommendations.RelatedMangaRepository
 import eu.kanade.tachiyomi.data.recommendations.RelatedMangaState
+import eu.kanade.tachiyomi.data.recommendations.GenreMatching
+import eu.kanade.tachiyomi.network.NetworkPreferences
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.catch
@@ -274,16 +278,21 @@ class MangaScreenModel(
     }
 
     private var relatedJob: Job? = null
+    private val relatedGeneration = java.util.concurrent.atomic.AtomicLong()
     private var recommendationSeed: Int? = null
     private var trackedRecommendationSeed: Int? = null
 
     private fun observeRecommendations() {
         screenModelScope.launchIO {
-            getTracks.subscribe(mangaId)
-                .map { tracks -> tracks.firstOrNull { it.trackerId == TrackerManager.ANILIST }?.remoteId?.toInt()?.takeIf { it > 0 } }
+            combine(
+                getTracks.subscribe(mangaId),
+                Injekt.get<NetworkPreferences>().externalRecommendations().changes(),
+            ) { tracks, enabled ->
+                tracks.firstOrNull { it.trackerId == TrackerManager.ANILIST }?.remoteId?.toInt()?.takeIf { it > 0 } to enabled
+            }
                 .distinctUntilChanged()
                 .catch { updateSuccessState { it.copy(relatedManga = RelatedMangaState.Error) } }
-                .collectLatest { id ->
+                .collectLatest { (id, _) ->
                     trackedRecommendationSeed = id
                     recommendationSeed = savedRecommendationSeed() ?: id
                     loadRelatedManga(forceRefresh = false)
@@ -301,18 +310,33 @@ class MangaScreenModel(
 
     private fun loadRelatedManga(forceRefresh: Boolean) {
         val title = successState?.manga?.title ?: return
+        val generation = relatedGeneration.incrementAndGet()
         relatedJob?.cancel()
+        if (!Injekt.get<NetworkPreferences>().externalRecommendations().get()) {
+            updateSuccessState { it.copy(relatedManga = RelatedMangaState.Disabled) }
+            return
+        }
+        val seed = recommendationSeed
         relatedJob = screenModelScope.launchIO {
             updateSuccessState { it.copy(relatedManga = RelatedMangaState.Loading) }
             val result = try {
-                RelatedMangaRepository.shared.load(title, recommendationSeed, forceRefresh)
+                RelatedMangaRepository.shared.load(title, seed, forceRefresh)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 RelatedMangaState.Error
             }
-            val withLocal = if (result == RelatedMangaState.Empty) localRecommendations() ?: result else result
-            updateSuccessState { it.copy(relatedManga = withLocal) }
+            val withLocal = when (result) {
+                is RelatedMangaState.NoMatches -> localRecommendations(result.genres) ?: result
+                RelatedMangaState.Empty -> localRecommendations() ?: result
+                else -> result
+            }
+            currentCoroutineContext().ensureActive()
+            if (generation == relatedGeneration.get() && seed == recommendationSeed &&
+                Injekt.get<NetworkPreferences>().externalRecommendations().get()
+            ) {
+                updateSuccessState { it.copy(relatedManga = withLocal) }
+            }
         }
     }
 
@@ -323,18 +347,23 @@ class MangaScreenModel(
             .sortedByDescending { it.source == successState?.manga?.source }
     }
 
-    private suspend fun localRecommendations(): RelatedMangaState.Ready? {
+    private suspend fun localRecommendations(confirmedGenres: Set<String>? = null): RelatedMangaState.Ready? {
         val seed = successState?.manga ?: return null
-        val creators = listOfNotNull(seed.author, seed.artist).filter { it.isNotBlank() }.toSet()
-        val genres = seed.genre.orEmpty().toSet()
+        val genres = confirmedGenres ?: GenreMatching.normalize(seed.genre.orEmpty())
+        if (genres.isEmpty()) return null
+        val names = setOf(RelatedMangaRepository.normalizeTitle(seed.title))
         val candidates = Injekt.get<tachiyomi.domain.entries.manga.interactor.GetLibraryManga>().await().map { it.manga }
-            .filter { it.id != seed.id }
+            .filter { it.id != seed.id && RelatedMangaRepository.normalizeTitle(it.title) !in names }
+            .filter { manga -> manga.genre.orEmpty().none { it.trim().lowercase() in setOf("성인", "19금", "hentai", "소설", "novel") } }
+            .distinctBy { it.source to it.url }
             .map { manga ->
-                val authorScore = if (listOfNotNull(manga.author, manga.artist).any { it in creators }) 10 else 0
-                manga to (authorScore + manga.genre.orEmpty().count { it in genres })
-            }.filter { it.second > 0 }.sortedByDescending { it.second }.take(12)
-            .map { (manga, _) -> eu.kanade.tachiyomi.data.recommendations.RelatedManga(0, manga.title, manga.thumbnailUrl, listOf(manga.title), manga.id) }
-        return candidates.takeIf { it.isNotEmpty() }?.let { RelatedMangaState.Ready(it, true, "보관함 · 같은 작가/장르") }
+                eu.kanade.tachiyomi.data.recommendations.RelatedManga(
+                    0, manga.title, manga.thumbnailUrl, listOf(manga.title), manga.id,
+                    genres = GenreMatching.normalize(manga.genre.orEmpty()), origin = "보관함", scoreSource = "library",
+                )
+            }
+        return GenreMatching.rank(genres, candidates).distinctBy { RelatedMangaRepository.normalizeTitle(it.title) }.take(12).takeIf { it.isNotEmpty() }
+            ?.let { RelatedMangaState.Ready(it, true, "공통 장르 · 보관함") }
     }
 
     fun fetchAllFromSource(manualFetch: Boolean = true) {

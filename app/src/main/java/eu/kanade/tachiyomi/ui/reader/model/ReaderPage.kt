@@ -17,4 +17,6 @@ open class ReaderPage(
     /** Personal fork: discovered from image dimensions, only kept for this loaded chapter. */
     var isWidePage = false
     var loadError: String? = null
+    var connectionError: Throwable? = null
+    val connectionRetry = eu.kanade.tachiyomi.util.system.ConnectionRetry()
 }
