@@ -20,8 +20,14 @@ MIN_THEMED = int(re.search(r'MIN_THEMED = (\d+)', CODE).group(1))
 MIN_TAG_RANK = int(re.search(r'MIN_TAG_RANK = (\d+)', CODE).group(1))
 
 
+FALLBACK_TAGS = int(re.search(r'FALLBACK_TAGS = (\d+)', CODE).group(1))
+
+
 def themes(m):
-    return {t['name'].lower() for t in m.get('tags') or [] if not t.get('isMediaSpoiler') and t.get('rank', 0) >= MIN_TAG_RANK}
+    tags = [t for t in m.get('tags') or [] if not t.get('isMediaSpoiler') and t.get('name') and not (t.get('category') or '').startswith('Technical')]
+    strong = [t for t in tags if t.get('rank', 0) >= MIN_TAG_RANK]
+    chosen = strong or sorted(tags, key=lambda t: -t.get('rank', 0))[:FALLBACK_TAGS]
+    return {t['name'].lower() for t in chosen}
 
 
 def query(name):
