@@ -34,6 +34,21 @@ object HomeFeedPolicy {
         sources.filter { (kind == null || it.kind == kind) && (!latest || it.supportsLatest) }.sortedBy { it.name }
             .groupBy { it.kind }.values.toList().let { groups -> (0 until limit).flatMap { i -> groups.mapNotNull { it.getOrNull(i) } }.take(limit) }
 }
+data class WorkIdentity(val source: Long, val url: String)
+
+object HomeRecentPolicy {
+    /** Newest history row per work, at most [limit]; rows without a timestamp sort last. */
+    fun <H> latest(history: List<H>, workId: (H) -> Long, at: (H) -> Long?, limit: Int = 18): List<H> =
+        history.sortedByDescending { at(it) ?: Long.MIN_VALUE }.distinctBy(workId).take(limit)
+}
+
+/** Library entries answer most lookups; other works are fetched once and reused across history emissions. */
+class WorkIdentityResolver(private val fetch: suspend (Long) -> WorkIdentity?) {
+    private val cache = java.util.concurrent.ConcurrentHashMap<Long, WorkIdentity>()
+    suspend fun resolve(id: Long, library: Map<Long, WorkIdentity>): WorkIdentity? =
+        library[id] ?: cache[id] ?: fetch(id)?.also { cache[id] = it }
+}
+
 data class DtoonHomeState(val recent: List<HomeEntry> = emptyList(), val library: List<HomeEntry> = emptyList(), val sources: List<HomeSource> = emptyList(), val error: String? = null, val feed: List<HomeEntry> = emptyList(), val feedLoading: Boolean = false, val feedErrors: List<String> = emptyList())
 
 class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
@@ -94,16 +109,21 @@ class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
     }
     private val mangaSources = Injekt.get<MangaSourceManager>()
     private val animeSources = Injekt.get<AnimeSourceManager>()
+    private val mangaIdentities = WorkIdentityResolver { id -> Injekt.get<GetManga>().await(id)?.let { WorkIdentity(it.source, it.url) } }
+    private val animeIdentities = WorkIdentityResolver { id -> Injekt.get<GetAnime>().await(id)?.let { WorkIdentity(it.source, it.url) } }
     init {
         screenModelScope.launch(Dispatchers.IO) {
             combine(Injekt.get<GetAnimeHistory>().subscribe(""), Injekt.get<GetMangaHistory>().subscribe(""),
                 Injekt.get<GetLibraryAnime>().subscribe(), Injekt.get<GetLibraryManga>().subscribe()) { ah, mh, al, ml ->
                 val library = ml.map { it.manga }.map { HomeEntry(it.id, it.title, it.source, it.url, true, it.asMangaCover()) } +
                     al.map { it.anime }.map { HomeEntry(it.id, it.title, it.source, it.url, false, it.asAnimeCover()) }
-                val recent = ah.sortedByDescending { it.seenAt?.time }.distinctBy { it.animeId }.take(18).mapNotNull { h ->
-                    Injekt.get<GetAnime>().await(h.animeId)?.let { HomeEntry(it.id, it.title, it.source, it.url, false, h.coverData, h.seenAt?.time ?: 0) }
-                } + mh.sortedByDescending { it.readAt?.time }.distinctBy { it.mangaId }.take(18).mapNotNull { h ->
-                    Injekt.get<GetManga>().await(h.mangaId)?.let { HomeEntry(it.id, it.title, it.source, it.url, true, h.coverData, h.readAt?.time ?: 0) }
+                val mangaLibrary = library.filter { it.manga }.associate { it.id to WorkIdentity(it.sourceId, it.path) }
+                val animeLibrary = library.filterNot { it.manga }.associate { it.id to WorkIdentity(it.sourceId, it.path) }
+                // History rows already carry title and cover; only source identity is looked up, mostly from the library.
+                val recent = HomeRecentPolicy.latest(ah, { it.animeId }, { it.seenAt?.time }).mapNotNull { h ->
+                    animeIdentities.resolve(h.animeId, animeLibrary)?.let { HomeEntry(h.animeId, h.title, it.source, it.url, false, h.coverData, h.seenAt?.time ?: 0) }
+                } + HomeRecentPolicy.latest(mh, { it.mangaId }, { it.readAt?.time }).mapNotNull { h ->
+                    mangaIdentities.resolve(h.mangaId, mangaLibrary)?.let { HomeEntry(h.mangaId, h.title, it.source, it.url, true, h.coverData, h.readAt?.time ?: 0) }
                 }
                 recent.sortedByDescending { it.at } to library
             }.catch { mutableState.update { it.copy(error = "기록을 불러오지 못했습니다. 기록 탭에서 다시 확인해 주세요.") } }

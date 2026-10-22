@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.home.personal
 
 import eu.kanade.tachiyomi.data.personal.MediaKind
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -48,5 +49,41 @@ class DtoonHomePolicyTest {
         val plan = ProgressCopyPolicy.plan(listOf(row(1, -1.0, complete = true)), listOf(row(11, -1.0)), mapOf(1L to 11L))!!
         assertEquals(listOf(11L), plan.read)
         assertNull(plan.trackNumber)
+    }
+    @Test fun `numbers unique on both sides are suggested and stored matches win`() {
+        val source = listOf(row(1, 1.0, complete = true), row(2, 2.0, complete = true), row(3, 3.0, complete = true))
+        val target = listOf(row(11, 1.0), row(12, 2.0), row(13, 3.0))
+        assertEquals(mapOf(2L to 12L, 3L to 13L), ProgressCopyPolicy.suggest(source, target, mapOf(1L to 11L)))
+    }
+    @Test fun `ambiguous or unknown numbers stay manual`() {
+        val source = listOf(row(1, 1.0, complete = true), row(2, 2.0, complete = true), row(3, 2.0, complete = true), row(4, -1.0, complete = true))
+        val target = listOf(row(11, 1.0), row(12, 1.0), row(13, 2.0), row(14, -1.0))
+        assertTrue(ProgressCopyPolicy.suggest(source, target, emptyMap()).isEmpty())
+    }
+    @Test fun `suggestions never reuse a target already matched`() {
+        val source = listOf(row(1, 1.0, complete = true), row(2, 5.0, complete = true))
+        val target = listOf(row(11, 1.0), row(15, 5.0))
+        assertEquals(mapOf(1L to 11L), ProgressCopyPolicy.suggest(source, target, mapOf(2L to 15L)) - 2L)
+        assertTrue(ProgressCopyPolicy.suggest(listOf(row(1, 1.0)), target, mapOf(9L to 11L)).isEmpty())
+    }
+    @Test fun `recent history keeps the newest row per work up to the limit`() {
+        data class H(val work: Long, val at: Long?)
+        val history = listOf(H(1, 10), H(2, 30), H(1, 40), H(3, null), H(4, 20))
+        assertEquals(listOf(H(1, 40), H(2, 30), H(4, 20)), HomeRecentPolicy.latest(history, { it.work }, { it.at }, limit = 3))
+        assertEquals(H(3, null), HomeRecentPolicy.latest(history, { it.work }, { it.at }).last())
+    }
+    @Test fun `identity lookups use the library first and fetch other works once`() = runTest {
+        val fetched = mutableListOf<Long>()
+        val resolver = WorkIdentityResolver { id -> fetched += id; WorkIdentity(9, "/w/$id") }
+        val library = mapOf(1L to WorkIdentity(5, "/lib"))
+        assertEquals(WorkIdentity(5, "/lib"), resolver.resolve(1, library))
+        repeat(3) { assertEquals(WorkIdentity(9, "/w/2"), resolver.resolve(2, library)) }
+        assertEquals(listOf(2L), fetched)
+    }
+    @Test fun `missing works are retried instead of cached as absent`() = runTest {
+        var calls = 0
+        val resolver = WorkIdentityResolver { calls++; null }
+        repeat(2) { assertNull(resolver.resolve(7, emptyMap())) }
+        assertEquals(2, calls)
     }
 }

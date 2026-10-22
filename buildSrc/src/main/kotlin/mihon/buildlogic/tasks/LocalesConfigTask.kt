@@ -5,6 +5,9 @@ import org.gradle.api.Task
 import org.gradle.api.tasks.TaskProvider
 import java.io.File
 
+/** Personal build: UI languages kept in the APK and offered by the in-app language picker. */
+val PERSONAL_LOCALES = listOf("en", "ko")
+
 private val emptyResourcesElement = "<resources>\\s*</resources>|<resources\\s*/>".toRegex()
 
 fun Project.getLocalesConfigTask(outputResourceDir: File): TaskProvider<Task> {
@@ -18,6 +21,7 @@ fun Project.getLocalesConfigTask(outputResourceDir: File): TaskProvider<Task> {
                     .replace("-r", "-")
                     .replace("+", "-")
             }
+            .filter { it in PERSONAL_LOCALES }
             .sorted()
             .joinToString("\n") { "|   <locale android:name=\"$it\"/>" }
 
