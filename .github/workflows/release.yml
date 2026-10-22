@@ -30,7 +30,9 @@ jobs:
             echo "::error::versionName/versionCode not found in app/build.gradle.kts"
             exit 1
           fi
-          tag="v$name"
+          # Dtoon releases are tagged by their name ("Dtoon8.9"), which is what the in-app updater compares.
+          case "$name" in Dtoon*) tag="$name" ;; *) tag="v$name" ;; esac
+          bash tools/release-notes.sh "$name" > /dev/null
           {
             echo "name=$name"
             echo "code=$code"
@@ -90,7 +92,7 @@ jobs:
       - name: Run independent policy tests
         run: bash tools/test-personal.sh
       - name: Compile app and run Android JVM tests
-        run: bash gradlew :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
+        run: bash gradlew :domain:testReleaseUnitTest :app:testReleaseUnitTest :app:assembleRelease -Pdisable-code-shrink --no-daemon
       - name: Verify signature and prepare release files
         run: |
           apk=app/build/outputs/apk/release/app-arm64-v8a-release.apk
@@ -100,12 +102,16 @@ jobs:
           fi
           "$ANDROID_HOME/build-tools/35.0.1/apksigner" verify --print-certs "$apk"
           mkdir -p personal/output
-          out="Dtoon-$VERSION_NAME-arm64-v8a.apk"
+          # The in-app updater picks the asset whose name contains the device ABI.
+          case "$VERSION_NAME" in Dtoon*) out="$VERSION_NAME-arm64-v8a.apk" ;; *) out="Dtoon-$VERSION_NAME-arm64-v8a.apk" ;; esac
+          echo "APK_NAME=$out" >> "$GITHUB_ENV"
           cp "$apk" "personal/output/$out"
           (cd personal/output && sha256sum "$out" > SHA256SUMS)
           {
-            echo "Dtoon $VERSION_NAME (versionCode $VERSION_CODE), arm64-v8a 전용."
+            bash tools/release-notes.sh "$VERSION_NAME"
             echo
+            echo "## 설치"
+            echo "- $out: versionCode $VERSION_CODE, arm64-v8a 전용, Android 8.0 이상."
             echo "- 앱 ID는 원본 애니요미와 같은 \`xyz.jmir.tachiyomi.mi\`입니다. 서명이 다른 앱이 설치되어 있으면 백업 후 삭제하고 설치하세요."
             echo "- 이전 Dtoon 버전 위에는 그대로 업데이트 설치됩니다."
             echo
@@ -118,11 +124,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$TAG" \
-            "personal/output/Dtoon-$VERSION_NAME-arm64-v8a.apk" \
+            "personal/output/$APK_NAME" \
             personal/output/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Dtoon $VERSION_NAME" \
+            --title "${VERSION_NAME/#Dtoon/Dtoon }" \
             --notes-file personal/output/notes.md
       - name: Remove signing material
         if: always()

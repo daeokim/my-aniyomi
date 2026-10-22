@@ -138,4 +138,32 @@ class GetApplicationReleaseTest {
         coVerify(exactly = 0) { releaseService.latest(any()) }
         result shouldBe GetApplicationRelease.Result.NoNewUpdate
     }
+
+    private suspend fun dtoonResult(installed: String, latestTag: String): GetApplicationRelease.Result {
+        every { preference.get() } returns 0
+        every { preference.set(any()) }.answers { }
+        coEvery { releaseService.latest(any()) } returns Release(latestTag, "info", "link", "link.apk")
+        return getApplicationRelease.await(
+            GetApplicationRelease.Arguments(isPreview = false, commitCount = 0, versionName = installed, repository = "test"),
+        )
+    }
+
+    @Test
+    fun `Dtoon release numbers compare as major and minor`() = runTest {
+        (dtoonResult("Dtoon8.9", "Dtoon8.10") is GetApplicationRelease.Result.NewUpdate) shouldBe true
+        (dtoonResult("Dtoon8.9", "Dtoon9.0") is GetApplicationRelease.Result.NewUpdate) shouldBe true
+        dtoonResult("Dtoon8.10", "Dtoon8.9") shouldBe GetApplicationRelease.Result.NoNewUpdate
+        dtoonResult("Dtoon8.9", "Dtoon8.9") shouldBe GetApplicationRelease.Result.NoNewUpdate
+    }
+
+    @Test
+    fun `Legacy fold tags are older than Dtoon releases`() = runTest {
+        dtoonResult("Dtoon8.9", "v0.18.2.1-dtoon-fold8.8") shouldBe GetApplicationRelease.Result.NoNewUpdate
+        (dtoonResult("0.18.2.1-dtoon-fold8.8", "Dtoon8.9") is GetApplicationRelease.Result.NewUpdate) shouldBe true
+    }
+
+    @Test
+    fun `Official Aniyomi tags never update a Dtoon build`() = runTest {
+        dtoonResult("Dtoon8.9", "v0.19.0.0") shouldBe GetApplicationRelease.Result.NoNewUpdate
+    }
 }
