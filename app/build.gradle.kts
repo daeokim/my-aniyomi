@@ -26,8 +26,8 @@ android {
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 13209
-        versionName = "Dtoon8.9"
+        versionCode = 13210
+        versionName = "Dtoon9.0"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
@@ -56,6 +56,11 @@ android {
             keyAlias = personalSigning.getProperty("keyAlias")
             keyPassword = personalSigning.getProperty("keyPassword")
         }
+    }
+
+    // Personal build: other translations are dropped from the APK; keep in sync with the language picker.
+    androidResources {
+        localeFilters += mihon.buildlogic.tasks.PERSONAL_LOCALES
     }
 
     buildTypes {

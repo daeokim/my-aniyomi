@@ -50,12 +50,25 @@ object ProgressCopyPolicy {
             trackNumber = pairs.filter { it.first.complete }.maxOfOrNull { it.second.number }?.takeIf { it > 0 },
         )
     }
+
+    /** Pairs unmatched rows whose known episode number occurs exactly once on each side; anything ambiguous stays manual. */
+    fun suggest(source: List<CopyRow>, target: List<CopyRow>, existing: Map<Long, Long>): Map<Long, Long> {
+        val used = existing.values.toSet()
+        val sourceByNumber = source.filter { it.number > 0 }.groupBy { it.number }
+        val targetByNumber = target.filter { it.number > 0 }.groupBy { it.number }
+        return source.filter { it.id !in existing && it.number > 0 }.mapNotNull { row ->
+            val candidate = targetByNumber[row.number]?.singleOrNull() ?: return@mapNotNull null
+            if (sourceByNumber[row.number]?.size != 1 || candidate.id in used) null else row.id to candidate.id
+        }.toMap()
+    }
 }
 
 data class ProgressCopyState(
     val source: List<CopyRow> = emptyList(),
     val target: List<CopyRow> = emptyList(),
     val matches: Map<Long, Long> = emptyMap(),
+    // Source rows whose match was proposed by episode number and not yet changed by the user.
+    val suggested: Set<Long> = emptySet(),
     val message: String = "회차를 불러오는 중…",
     val saving: Boolean = false,
     val autoTrack: AutoTrackState = AutoTrackState.NEVER,
@@ -80,20 +93,23 @@ class ProgressCopyScreenModel(private val fromId: Long, private val toId: Long, 
                     val url = EpisodeMappingStore.read(fromWork, toWork, row.url)
                     target.singleOrNull { it.url == url }?.takeIf { it.id !in matches.values }?.let { matches[row.id] = it.id }
                 }
+                val suggestions = ProgressCopyPolicy.suggest(source, target, matches)
+                matches += suggestions
                 val message = when {
                     target.isEmpty() -> "대상 작품의 상세 화면에서 회차 목록을 먼저 불러와 주세요."
                     source.isEmpty() -> "복사할 완료·북마크 기록이 없습니다."
+                    suggestions.isNotEmpty() -> "회차 번호가 같은 ${suggestions.size}개를 미리 짝지었습니다. '번호로 제안'으로 표시된 대응을 확인하고, 틀린 것은 눌러서 바꾸세요. 완료·북마크만 합치며 원본 기록은 유지합니다."
                     else -> "회차 제목을 확인해 직접 대응시키세요. 완료·북마크만 합치며 원본 기록은 유지합니다. 페이지·재생 위치·시청 기록은 길이가 다를 수 있어 복사하지 않습니다."
                 }
                 val autoTrack = Injekt.get<TrackPreferences>().autoUpdateTrackOnMarkRead().get()
-                mutableState.update { it.copy(source = source, target = target, matches = matches, message = message, autoTrack = autoTrack) }
+                mutableState.update { it.copy(source = source, target = target, matches = matches, suggested = suggestions.keys, message = message, autoTrack = autoTrack) }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { mutableState.update { it.copy(message = "회차를 불러오지 못했습니다. 다시 열어 주세요.") } }
         }
     }
 
     fun match(sourceId: Long, targetId: Long?) = mutableState.update {
-        it.copy(matches = if (targetId == null) it.matches - sourceId else it.matches + (sourceId to targetId))
+        it.copy(matches = if (targetId == null) it.matches - sourceId else it.matches + (sourceId to targetId), suggested = it.suggested - sourceId)
     }
 
     fun copy(syncTrackers: Boolean) {
@@ -200,7 +216,8 @@ data class ProgressCopyScreen(val fromId: Long, val toId: Long, val manga: Boole
             LazyColumn(Modifier.weight(1f)) {
                 items(state.source, key = { it.id }) { row ->
                     TextButton(onClick = { choosingId = row.id }, enabled = !state.saving) {
-                        Text("${row.title}\n→ ${state.target.find { it.id == state.matches[row.id] }?.title ?: "대상 회차 선택"}")
+                        val hint = if (row.id in state.suggested) " (번호로 제안)" else ""
+                        Text("${row.title}\n→ ${state.target.find { it.id == state.matches[row.id] }?.title ?: "대상 회차 선택"}$hint")
                     }
                 }
             }
