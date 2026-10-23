@@ -25,6 +25,15 @@ object LibraryUpdatePolicy {
         return List(count) { start - it }
     }
 
+    // Completed, licensed, cancelled and on hiatus: the updates list (updatesView.sq) hides these works.
+    private val HIDDEN_FROM_UPDATES = setOf(2L, 4L, 5L, 6L)
+
+    /**
+     * Updates-tab badge step for one work: the list shows one row per work (its latest open item) and hides
+     * finished or paused works, so the badge counts works, not every new chapter or episode.
+     */
+    fun badgeIncrement(newItems: Int, status: Long) = if (newItems > 0 && status !in HIDDEN_FROM_UPDATES) 1 else 0
+
     fun <T> categories(items: List<T>, manual: Boolean, category: Long, included: Set<Long>, excluded: Set<Long>,
                        id: (T) -> Long, categoryId: (T) -> Long): List<T> {
         if (category != -1L) return items.filter { categoryId(it) == category }.distinctBy(id)

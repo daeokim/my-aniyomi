@@ -264,8 +264,9 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
                                                 hasDownloads.set(true)
                                             }
 
+                                            val status = getAnime.await(anime.id)?.status ?: anime.status
                                             libraryPreferences.newAnimeUpdatesCount()
-                                                .getAndSet { it + newEpisodes.size }
+                                                .getAndSet { it + LibraryUpdatePolicy.badgeIncrement(newEpisodes.size, status) }
 
                                             // Convert to the anime that contains new episodes
                                             newUpdates.add(anime to newEpisodes.toTypedArray())

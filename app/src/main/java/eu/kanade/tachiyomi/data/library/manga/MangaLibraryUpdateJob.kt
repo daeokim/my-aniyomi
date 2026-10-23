@@ -257,8 +257,9 @@ class MangaLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
                                                 downloadChapters(manga, chaptersToDownload)
                                                 hasDownloads.set(true)
                                             }
+                                            val status = getManga.await(manga.id)?.status ?: manga.status
                                             libraryPreferences.newMangaUpdatesCount()
-                                                .getAndSet { it + newChapters.size }
+                                                .getAndSet { it + LibraryUpdatePolicy.badgeIncrement(newChapters.size, status) }
 
                                             // Convert to the manga that contains new chapters
                                             newUpdates.add(manga to newChapters.toTypedArray())
