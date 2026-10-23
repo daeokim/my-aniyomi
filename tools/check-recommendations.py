@@ -21,6 +21,13 @@ MIN_TAG_RANK = int(re.search(r'MIN_TAG_RANK = (\d+)', CODE).group(1))
 
 
 FALLBACK_TAGS = int(re.search(r'FALLBACK_TAGS = (\d+)', CODE).group(1))
+MATCHING = (ROOT / 'app/src/main/java/eu/kanade/tachiyomi/data/recommendations/GenreMatching.kt').read_text()
+DARK_TAGS = set(re.findall(r'"([^"]+)"', re.search(r'darkTags = setOf\((.*?)\)', MATCHING, re.S).group(1)))
+DARK_GENRES = set(re.findall(r'"([^"]+)"', re.search(r'darkGenres = setOf\((.*?)\)', MATCHING, re.S).group(1)))
+
+
+def dark(genres, tags):
+    return any(g.lower().replace(' ', '') in DARK_GENRES for g in genres) or bool(tags & DARK_TAGS)
 
 
 def themes(m):
@@ -97,8 +104,9 @@ def recommend(title):
     if seed_themes and sum(1 for m in unique if seed_themes & themes(m)) >= MIN_THEMED:
         unique = [m for m in unique if m.get('direct') or seed_themes & themes(m)]
         source += ' · 공통 주제 없는 장르 보충 제외'
+    light = not dark(genres, seed_themes)
     seen, ranked = set(), []
-    for m in sorted(unique, key=lambda m: (bool(country) and m.get('countryOfOrigin') != country, -len(seed_themes & themes(m)), -len(genres & set(m['genres'])))):
+    for m in sorted(unique, key=lambda m: (bool(country) and m.get('countryOfOrigin') != country, light and dark(m['genres'], themes(m)), -len(seed_themes & themes(m)), -len(genres & set(m['genres'])))):
         if m['id'] not in seen:
             seen.add(m['id'])
             ranked.append(m)

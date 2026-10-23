@@ -23,18 +23,37 @@ object GenreMatching {
 
     fun label(genre: String): String = labels[genre] ?: genre
 
-    private data class Group(val otherCountry: Boolean, val sharedThemes: Int, val sharedGenres: Int, val genreUnion: Int)
+    // AniList theme tags (lowercase) and genres that make a work heavy; a light seed should not lead with them.
+    private val darkTags = setOf(
+        "suicide", "tragedy", "gore", "torture", "self-harm", "bullying", "death game", "cannibalism",
+        "body horror", "rape", "abuse", "domestic abuse", "terrorism", "war",
+    )
+    private val darkGenres = setOf("horror", "thriller", "psychological")
+
+    /** True for works whose genres or strong theme tags are heavy (tragedy, suicide, horror ...). */
+    fun dark(genres: Set<String>, tags: Set<String>) = genres.any { it in darkGenres } || tags.any { it in darkTags }
+
+    private data class Group(val otherCountry: Boolean, val moodClash: Boolean, val sharedThemes: Int, val sharedGenres: Int, val genreUnion: Int)
 
     /**
      * With a known [seedCountry], same-country works come first (they are what installed sources can find).
+     * A light seed (see [dark], judged from [seedTags]) then pushes heavy works back: a cheerful daily-life
+     * webtoon should not open with a suicide story just because both are "Drama".
      * Shared theme tags (precomputed in [RelatedManga.commonTags]) then outrank broad genre overlap.
      */
-    fun rank(seed: Set<String>, candidates: List<RelatedManga>, seedCountry: String? = null): List<RelatedManga> {
+    fun rank(seed: Set<String>, candidates: List<RelatedManga>, seedCountry: String? = null, seedTags: Set<String> = emptySet()): List<RelatedManga> {
+        val lightSeed = !dark(seed, seedTags)
         val groups = candidates.map { it.copy(commonGenres = seed intersect it.genres) }
             .filter { it.commonGenres.isNotEmpty() }
-            .groupBy { Group(seedCountry != null && it.country != seedCountry, it.commonTags.size, it.commonGenres.size, (seed union it.genres).size) }
+            .groupBy {
+                Group(
+                    seedCountry != null && it.country != seedCountry, lightSeed && dark(it.genres, it.tags),
+                    it.commonTags.size, it.commonGenres.size, (seed union it.genres).size,
+                )
+            }
             .toList().sortedWith(
                 compareBy<Pair<Group, List<RelatedManga>>> { it.first.otherCountry }
+                    .thenBy { it.first.moodClash }
                     .thenByDescending { it.first.sharedThemes }
                     .thenByDescending { it.first.sharedGenres }
                     .thenBy { it.first.genreUnion },

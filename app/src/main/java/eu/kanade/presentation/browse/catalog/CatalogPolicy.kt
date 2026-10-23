@@ -13,6 +13,12 @@ data class CatalogCapability(val weekday: Boolean, val completed: Boolean, val l
     /** Personal fork: weekday lists are offered for Naver Webtoon only. */
     fun forSource(sourceId: Long, naverId: Long) = if (sourceId == naverId) this else copy(weekday = false)
 
+    /** Tabs to show: the weekday tab disappears entirely where it is not offered. */
+    val tabs: List<CatalogTab> get() = CatalogTab.entries.filter { it != CatalogTab.WEEKDAY || weekday }
+
+    /** Saved tabs are stored by [CatalogTab.ordinal] so hiding a tab never shifts the others. */
+    fun pageOf(savedTab: Int) = tabs.indexOfFirst { it.ordinal == savedTab }.coerceAtLeast(0)
+
     fun supports(tab: CatalogTab) = when (tab) {
         CatalogTab.POPULAR -> true
         CatalogTab.LATEST -> latest

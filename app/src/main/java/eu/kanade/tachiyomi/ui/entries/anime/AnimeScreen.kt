@@ -242,7 +242,8 @@ class AnimeScreen(
                 navigator.push(GlobalAnimeSearchScreen(relatedAnime.title))
             },
             relatedAnimeDisplayMode = screenModel.relatedAnimeDisplayMode,
-            relatedContent = {
+            relatedContent = relatedContent@{
+                if (!screenModel.genreRecommendationsShown) return@relatedContent
                 eu.kanade.presentation.entries.manga.components.RelatedMangaSection(
                     state = successState.genreRecommendations,
                     onRetry = screenModel::retryGenreRecommendations,

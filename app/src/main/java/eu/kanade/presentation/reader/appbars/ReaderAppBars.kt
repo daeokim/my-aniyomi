@@ -24,7 +24,6 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.reader.components.ChapterNavigator
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
-import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
 import kotlinx.collections.immutable.persistentListOf
@@ -58,8 +57,7 @@ fun ReaderAppBars(
     totalPages: Int,
     onPageIndexChange: (Int) -> Unit,
 
-    readingMode: ReadingMode,
-    onClickReadingMode: () -> Unit,
+    onClickChapterList: () -> Unit,
     orientation: ReaderOrientation,
     onClickOrientation: () -> Unit,
     cropEnabled: Boolean,
@@ -180,8 +178,7 @@ fun ReaderAppBars(
                 )
                 BottomReaderBar(
                     backgroundColor = backgroundColor,
-                    readingMode = readingMode,
-                    onClickReadingMode = onClickReadingMode,
+                    onClickChapterList = onClickChapterList,
                     orientation = orientation,
                     onClickOrientation = onClickOrientation,
                     cropEnabled = cropEnabled,

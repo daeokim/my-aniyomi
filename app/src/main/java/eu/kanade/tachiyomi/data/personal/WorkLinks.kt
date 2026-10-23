@@ -15,6 +15,9 @@ object MediaKinds {
     fun forSource(sourceId: Long, manga: Boolean) = if (manga) {
         if (sourceId in setOf(850164079243120301L, 7080800841003944426L, 760550510744678728L)) MediaKind.WEBTOON else MediaKind.MANGA
     } else video[sourceId] ?: MediaKind.VIDEO
+
+    /** AniList has anime but no Korean dramas, films or variety shows: genre recommendations only fit 애니. */
+    fun animeRecommendations(sourceId: Long) = forSource(sourceId, manga = false) == MediaKind.ANIME
 }
 
 /** Explicit user-confirmed groups. Original entries, source IDs, downloads and histories stay intact. */

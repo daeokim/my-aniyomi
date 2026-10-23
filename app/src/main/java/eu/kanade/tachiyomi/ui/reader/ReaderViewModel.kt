@@ -790,6 +790,22 @@ class ReaderViewModel @JvmOverloads constructor(
         mutableState.update { it.copy(dialog = Dialog.ReadingModeSelect) }
     }
 
+    /** 목차 in the manga screen's order, including read chapters the reader itself may skip. */
+    fun openChapterListDialog() {
+        val manga = manga ?: return
+        val currentId = state.value.currentChapter?.chapter?.id
+        viewModelScope.launchIO {
+            val chapters = getChaptersByMangaId.await(manga.id, applyScanlatorFilter = true)
+                .sortedWith(getChapterSort(manga))
+            val (entries, index) = ReaderToc.build(
+                chapters, currentId, manga.source,
+                id = { it.id }, name = { it.name }, dateUpload = { it.dateUpload },
+                read = { it.read }, bookmark = { it.bookmark },
+            )
+            mutableState.update { it.copy(dialog = Dialog.ChapterList(entries, index)) }
+        }
+    }
+
     fun openOrientationModeSelectDialog() {
         mutableState.update { it.copy(dialog = Dialog.OrientationModeSelect) }
     }
@@ -994,6 +1010,7 @@ class ReaderViewModel @JvmOverloads constructor(
         data object Settings : Dialog
         data object ReadingModeSelect : Dialog
         data object OrientationModeSelect : Dialog
+        data class ChapterList(val entries: List<ReaderTocEntry>, val initialIndex: Int) : Dialog
         data class PageActions(val page: ReaderPage) : Dialog
     }
 
