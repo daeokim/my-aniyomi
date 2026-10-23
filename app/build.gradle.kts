@@ -26,8 +26,8 @@ android {
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 13217
-        versionName = "Dtoon9.7"
+        versionCode = 13218
+        versionName = "Dtoon9.8"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
@@ -122,6 +122,8 @@ android {
 
     packaging {
         jniLibs {
+            // Torrent playback is not used in Dtoon; its TorrServer library alone was ~19 MB of the APK.
+            excludes += "**/libtorrserver.so"
             keepDebugSymbols += listOf(
                 "libandroidx.graphics.path",
                 "libarchive-jni",

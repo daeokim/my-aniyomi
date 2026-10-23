@@ -22,6 +22,15 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('personal/signing/signing.properties', code)
         self.assertIn('personal/signing/', (ROOT / '.gitignore').read_text())
 
+    def test_torrserver_is_not_shipped_and_cannot_be_started(self):
+        # The native library is excluded; every TorrServer start is gated on a key no screen can turn on.
+        self.assertIn('excludes += "**/libtorrserver.so"', (ROOT / 'app/build.gradle.kts').read_text())
+        prefs = (ROOT / 'core/common/src/main/java/aniyomi/core/common/torrent/TorrentPreferences.kt').read_text()
+        self.assertIn('getBoolean("dtoon_torrserver_unavailable", false)', prefs)
+        settings = JAVA / 'presentation/more/settings/screen'
+        self.assertNotIn('PlayerSettingsTorrentScreen', (settings / 'player/PlayerSettingsMainScreen.kt').read_text())
+        self.assertNotIn('PlayerSettingsTorrentScreen', (settings / 'SettingsSearchScreen.kt').read_text())
+
     def test_private_branding_and_resizable_reader(self):
         app = ET.parse(ROOT / 'app/src/main/AndroidManifest.xml').getroot().find('application')
         self.assertEqual(app.get(ANDROID + 'label'), '@string/personal_app_name')

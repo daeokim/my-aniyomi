@@ -6,7 +6,9 @@ import tachiyomi.core.common.preference.getEnum
 class TorrentPreferences(
     private val preferenceStore: PreferenceStore,
 ) {
-    fun torrServerEnable() = preferenceStore.getBoolean("pref_torrserver_enable", false)
+    // Dtoon ships without the TorrServer native library and has no switch for it, so this new key stays off
+    // even for an old "pref_torrserver_enable" value from a backup; every TorrServer start checks it.
+    fun torrServerEnable() = preferenceStore.getBoolean("dtoon_torrserver_unavailable", false)
     fun torrServerShownNotice() = preferenceStore.getBoolean("pref_torrserver_shownotice", false)
 
     fun torrServerPort() = preferenceStore.getString("pref_torrserver_port", "8090")
