@@ -207,7 +207,11 @@ class AnimeScreenModel(
         PersonalStore.number("recommendation_anime:" + PersonalStore.key("${it.source}:${it.url}"))
     }
 
+    val genreRecommendationsShown: Boolean
+        get() = successState?.anime?.source?.let(eu.kanade.tachiyomi.data.personal.MediaKinds::animeRecommendations) == true
+
     private fun observeGenreRecommendations() {
+        if (!genreRecommendationsShown) return
         screenModelScope.launchIO {
             combine(
                 getTracks.subscribe(animeId),

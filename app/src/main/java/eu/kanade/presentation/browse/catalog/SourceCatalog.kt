@@ -57,12 +57,13 @@ fun <T : Any> SourceCatalog(
     entryKey: (T) -> String,
     card: @Composable (T) -> Unit,
 ) {
-    val pager = rememberPagerState(initialPage = initialTab.coerceIn(0, 3)) { 4 }
+    val tabs = capability.tabs
+    val pager = rememberPagerState(initialPage = capability.pageOf(initialTab)) { tabs.size }
     val scope = rememberCoroutineScope()
     val holder = rememberSaveableStateHolder()
     var day by remember(sourceKey) { mutableIntStateOf(initialDay.coerceIn(1, 7)) }
     var showFilter by remember { mutableStateOf(true) }
-    LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { onTab(it); showFilter = true } }
+    LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { onTab(tabs[it].ordinal); showFilter = true } }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         Column {
             if (searchQuery.isNotBlank()) {
@@ -74,12 +75,12 @@ fun <T : Any> SourceCatalog(
                 }
             } else {
                 TabRow(selectedTabIndex = pager.currentPage) {
-                    CatalogTab.entries.forEachIndexed { i, tab ->
+                    tabs.forEachIndexed { i, tab ->
                         Tab(selected = pager.currentPage == i, onClick = { scope.launch { pager.animateScrollToPage(i) } }, text = { Text(tab.label) })
                     }
                 }
-                HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { CatalogTab.entries[it].name }) { page ->
-                    val tab = CatalogTab.entries[page]
+                HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { tabs[it].name }) { page ->
+                    val tab = tabs[page]
                     Column(Modifier.fillMaxSize()) {
                         if (tab == CatalogTab.WEEKDAY && capability.supports(tab)) {
                             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

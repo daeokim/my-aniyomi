@@ -47,4 +47,14 @@ class CatalogSortTest {
         assertEquals(AnimeFilter.Sort.Selection(0, true), (anime[0] as AnimeFilter.Sort).state)
     }
 
+    @Test fun `weekday tab is removed outside naver and saved tabs keep their meaning`() {
+        val naver = 850164079243120301L
+        val all = CatalogCapability(weekday = true, completed = true, latest = true)
+        assertEquals(CatalogTab.entries, all.forSource(naver, naver).tabs)
+        val other = all.forSource(1L, naver)
+        assertEquals(listOf(CatalogTab.POPULAR, CatalogTab.LATEST, CatalogTab.COMPLETED), other.tabs)
+        assertEquals(2, other.pageOf(CatalogTab.COMPLETED.ordinal))
+        assertEquals(0, other.pageOf(CatalogTab.WEEKDAY.ordinal))
+        assertEquals(3, all.pageOf(CatalogTab.COMPLETED.ordinal))
+    }
 }

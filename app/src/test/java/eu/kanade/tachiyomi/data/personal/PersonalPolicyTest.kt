@@ -69,4 +69,11 @@ class PersonalPolicyTest {
         assertEquals(2, (filters[1] as Status).state)
         assertTrue(MangaCatalogFilters.capabilities(filters, true).weekday)
     }
+    @Test fun `genre recommendations are offered for anime sources only`() {
+        assertTrue(MediaKinds.animeRecommendations(850164079243120104L))
+        assertTrue(MediaKinds.animeRecommendations(850164079243120202L))
+        assertFalse(MediaKinds.animeRecommendations(850164079243120102L))
+        assertFalse(MediaKinds.animeRecommendations(850164079243120101L))
+        assertFalse(MediaKinds.animeRecommendations(42L))
+    }
 }

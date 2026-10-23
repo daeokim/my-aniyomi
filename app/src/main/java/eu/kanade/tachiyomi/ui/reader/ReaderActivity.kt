@@ -50,6 +50,7 @@ import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.PageIndicatorText
 import eu.kanade.presentation.reader.ReaderContentOverlay
+import eu.kanade.presentation.reader.ReaderChapterListDialog
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
 import eu.kanade.presentation.reader.ReadingModeSelectDialog
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
@@ -419,10 +420,7 @@ class ReaderActivity : BaseActivity() {
                     moveToPageIndex(it)
                 },
 
-                readingMode = ReadingMode.fromPreference(
-                    viewModel.getMangaReadingMode(resolveDefault = false),
-                ),
-                onClickReadingMode = viewModel::openReadingModeSelectDialog,
+                onClickChapterList = viewModel::openChapterListDialog,
                 orientation = ReaderOrientation.fromPreference(
                     viewModel.getMangaOrientation(resolveDefault = false),
                 ),
@@ -487,6 +485,15 @@ class ReaderActivity : BaseActivity() {
                             menuToggleToast?.cancel()
                             menuToggleToast = toast(stringRes)
                         },
+                    )
+                }
+                is ReaderViewModel.Dialog.ChapterList -> {
+                    val dialog = state.dialog as ReaderViewModel.Dialog.ChapterList
+                    ReaderChapterListDialog(
+                        entries = dialog.entries,
+                        initialIndex = dialog.initialIndex,
+                        onDismissRequest = onDismissRequest,
+                        onOpenChapter = ::openChapter,
                     )
                 }
                 is ReaderViewModel.Dialog.PageActions -> {
@@ -678,6 +685,14 @@ class ReaderActivity : BaseActivity() {
      * Tells the presenter to load the previous chapter and mark it as active. The progress dialog
      * should be automatically shown.
      */
+    /** Reopens the reader on [chapterId] so loading, history and read timers follow the normal path. */
+    private fun openChapter(chapterId: Long) {
+        viewModel.closeDialog()
+        val mangaId = viewModel.state.value.manga?.id ?: return
+        startActivity(newIntent(this, mangaId, chapterId))
+        finish()
+    }
+
     private fun loadPreviousChapter() {
         lifecycleScope.launch {
             viewModel.loadPreviousChapter()

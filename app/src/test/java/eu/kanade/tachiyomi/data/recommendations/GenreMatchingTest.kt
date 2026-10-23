@@ -46,4 +46,17 @@ class GenreMatchingTest {
         val broad = card(2, "Action", "Fantasy")
         assertEquals(listOf(1, 2), GenreMatching.rank(setOf("action", "fantasy"), listOf(broad, themed)).map { it.id })
     }
+    @Test fun `a light seed pushes heavy works back but a heavy seed keeps them`() {
+        val tragedy = card(1, "Drama", "Slice of Life").copy(tags = setOf("suicide"), commonTags = setOf("school"))
+        val light = card(2, "Drama")
+        val seed = setOf("drama", "sliceoflife")
+        assertEquals(listOf(2, 1), GenreMatching.rank(seed, listOf(tragedy, light), seedTags = setOf("autobiographical")).map { it.id })
+        assertEquals(listOf(1, 2), GenreMatching.rank(seed, listOf(tragedy, light), seedTags = setOf("tragedy")).map { it.id })
+        assertEquals(listOf(1, 2), GenreMatching.rank(seed + "psychological", listOf(tragedy, light)).map { it.id })
+    }
+    @Test fun `country still comes before mood`() {
+        val kr = card(1, "Drama").copy(country = "KR", tags = setOf("tragedy"))
+        val jp = card(2, "Drama").copy(country = "JP")
+        assertEquals(listOf(1, 2), GenreMatching.rank(setOf("drama"), listOf(jp, kr), "KR").map { it.id })
+    }
 }

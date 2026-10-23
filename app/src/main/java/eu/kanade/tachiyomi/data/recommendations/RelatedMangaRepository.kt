@@ -162,7 +162,7 @@ class RelatedMangaRepository(
             if (seedTags.isEmpty() || items.count { it.commonTags.isNotEmpty() } < MIN_THEMED) items
             else items.filter { it.scoreSource == "direct" || it.commonTags.isNotEmpty() }
         }
-        val cards = GenreMatching.rank(seedGenres, themed, country).take(18)
+        val cards = GenreMatching.rank(seedGenres, themed, country, seedTags).take(18)
         return if (cards.isEmpty()) RelatedMangaState.NoMatches(seedGenres)
         else RelatedMangaState.Ready(cards, sameGenre = true)
     }
