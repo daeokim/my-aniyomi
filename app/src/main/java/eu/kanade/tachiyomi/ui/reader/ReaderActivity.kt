@@ -685,12 +685,18 @@ class ReaderActivity : BaseActivity() {
      * Tells the presenter to load the previous chapter and mark it as active. The progress dialog
      * should be automatically shown.
      */
-    /** Reopens the reader on [chapterId] so loading, history and read timers follow the normal path. */
+    /**
+     * Switches chapters in place, starting where the reader would (last read page of an unfinished chapter).
+     * Chapters the reader list skips (read or filtered) reopen the reader on them instead.
+     */
     private fun openChapter(chapterId: Long) {
         viewModel.closeDialog()
-        val mangaId = viewModel.state.value.manga?.id ?: return
-        startActivity(newIntent(this, mangaId, chapterId))
-        finish()
+        lifecycleScope.launch {
+            if (viewModel.loadChapterById(chapterId)) return@launch
+            val mangaId = viewModel.state.value.manga?.id ?: return@launch
+            startActivity(newIntent(this@ReaderActivity, mangaId, chapterId))
+            finish()
+        }
     }
 
     private fun loadPreviousChapter() {

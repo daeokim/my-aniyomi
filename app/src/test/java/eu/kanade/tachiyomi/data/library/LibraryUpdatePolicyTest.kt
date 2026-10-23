@@ -49,4 +49,10 @@ class LibraryUpdatePolicyTest {
         assertEquals(listOf(1000L, 999L), LibraryUpdatePolicy.fetchDates(2, now = 1000, dateAdded = 5000, firstLibrarySync = true))
         assertTrue(LibraryUpdatePolicy.fetchDates(0, now = 1000, dateAdded = 900, firstLibrarySync = true).isEmpty())
     }
+    @Test fun `updates badge counts each listed work once`() {
+        assertEquals(1, LibraryUpdatePolicy.badgeIncrement(newItems = 7, status = 1))
+        assertEquals(0, LibraryUpdatePolicy.badgeIncrement(newItems = 0, status = 1))
+        for (hidden in listOf(2L, 4L, 5L, 6L)) assertEquals(0, LibraryUpdatePolicy.badgeIncrement(3, hidden))
+        assertEquals(1, LibraryUpdatePolicy.badgeIncrement(3, 0))
+    }
 }

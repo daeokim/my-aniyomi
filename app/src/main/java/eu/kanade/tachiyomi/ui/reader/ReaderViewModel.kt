@@ -624,6 +624,17 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     /**
+     * 목차 jump inside the running reader, like the prev/next buttons. Returns false when the chapter is not in
+     * the reader's list (skipped as read or filtered), so the caller can reopen the reader on it instead.
+     */
+    suspend fun loadChapterById(chapterId: Long): Boolean {
+        val chapter = withIOContext { chapterList.firstOrNull { it.chapter.id == chapterId } } ?: return false
+        if (chapter == state.value.currentChapter) return true
+        loadAdjacent(chapter)
+        return true
+    }
+
+    /**
      * Called from the activity to load and set the previous chapter as active.
      */
     suspend fun loadPreviousChapter() {
