@@ -58,12 +58,25 @@ class IntegrationContracts(unittest.TestCase):
         adapter = (JAVA / 'tachiyomi/ui/reader/viewer/pager/PagerViewerAdapter.kt').read_text()
         holder = (JAVA / 'tachiyomi/ui/reader/viewer/pager/PagerSpreadHolder.kt').read_text()
         self.assertIn('pager.addOnLayoutChangeListener', viewer)
-        self.assertIn('moveToPage(anchor)', viewer)
+        self.assertIn('restorePosition(previous, sameChapter, chapters)', viewer)
+        # Without a usable anchor the pager goes to the current chapter's page, never the stale index.
+        self.assertIn('moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])', viewer)
+        self.assertIn('(awaitingIdleViewerChapters ?: viewerChapters)?.let(::setChapters)', viewer)
         self.assertIn('requestedFocus?.takeIf(item::contains)', viewer)
         self.assertIn('FoldLayoutPolicy.group(', adapter)
         self.assertIn('FoldLayoutPolicy.physicalPair(', holder)
         self.assertIn('PagerPageHolder(context, viewer, page)', holder)
         self.assertIn('getPageHolder(spread.second)?.imageLoaded == true', viewer)
+
+    def test_fold_recreation_keeps_reading_chapter(self):
+        # Webtoon restore pins the requested page until a real scroll; layout-only (0, 0) callbacks cannot move it.
+        webtoon = (JAVA / 'tachiyomi/ui/reader/viewer/webtoon/WebtoonViewer.kt').read_text()
+        self.assertIn('if (dx == 0 && dy == 0) return', webtoon)
+        self.assertIn('holdRestoredPage = true\n            recycler.isVisible = true', webtoon)
+        self.assertIn('override fun moveToPage(page: ReaderPage) {\n        holdRestoredPage = false', webtoon)
+        reader = (JAVA / 'tachiyomi/ui/reader/ReaderActivity.kt').read_text()
+        self.assertIn('intent.putExtra("chapter", it)', reader)
+        self.assertIn('moveToPageIndex(if (chapter.read) 0 else chapter.last_page_read)', reader)
 
     def test_shared_catalog_reflows_and_keeps_independent_query_state(self):
         ui = (JAVA / 'presentation/browse/catalog/SourceCatalog.kt').read_text()

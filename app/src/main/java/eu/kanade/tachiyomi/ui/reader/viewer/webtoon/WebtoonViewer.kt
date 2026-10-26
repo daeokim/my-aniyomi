@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.webtoon
 
+// Personal fork: keeps the restored page (and chapter) across fold/unfold recreation.
+
 import android.graphics.PointF
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -72,6 +74,14 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      */
     private var currentPage: Any? = null
 
+    /**
+     * True right after the first layout restores [ViewerChapters.currChapter]'s requested page. The restore puts that
+     * page at the top, but [onScrolled] reports the last fully visible item, so layout passes (images decoding at the
+     * new width) would move progress forward on every fold/unfold and could switch to the next chapter. Holds the
+     * restored page until a real scroll or an explicit [moveToPage].
+     */
+    private var holdRestoredPage = false
+
     private val threshold: Int =
         Injekt.get<ReaderPreferences>()
             .readerHideThreshold()
@@ -89,6 +99,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         recycler.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    if (holdRestoredPage) {
+                        // Layout-only callbacks report (0, 0); any real movement releases the hold.
+                        if (dx == 0 && dy == 0) return
+                        holdRestoredPage = false
+                    }
                     onScrolled()
 
                     if ((dy > threshold || dy < -threshold) && activity.viewModel.state.value.menuVisible) {
@@ -247,6 +262,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
             logcat { "Recycler first layout" }
             val pages = chapters.currChapter.pages ?: return
             moveToPage(pages[min(chapters.currChapter.requestedPage, pages.lastIndex)])
+            holdRestoredPage = true
             recycler.isVisible = true
         }
     }
@@ -255,6 +271,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Tells this viewer to move to the given [page].
      */
     override fun moveToPage(page: ReaderPage) {
+        holdRestoredPage = false
         val position = adapter.items.indexOf(page)
         if (position != -1) {
             layoutManager.scrollToPositionWithOffset(position, 0)
