@@ -15,6 +15,7 @@ import androidx.viewpager.widget.ViewPager
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.ReaderPositionPolicy
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -81,8 +82,8 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             field = value
             if (value) {
                 awaitingIdleViewerChapters?.let { viewerChapters ->
-                    setChaptersInternal(viewerChapters)
                     awaitingIdleViewerChapters = null
+                    setChaptersInternal(viewerChapters)
                     if (viewerChapters.currChapter.pages?.size == 1) {
                         adapter.nextTransition?.to?.let(activity::requestPreloadChapter)
                     }
@@ -96,6 +97,10 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         pager.isFocusable = false
         pager.offscreenPageLimit = 1
         pager.id = R.id.reader_pager
+        // Android's saved ViewPager index describes the old single/spread list.
+        // Restore exclusively from the source page held by the ViewModel instead.
+        pager.isSaveEnabled = false
+        pager.setSaveFromParentEnabled(false)
         pager.adapter = adapter
         pager.addOnPageChangeListener(
             object : ViewPager.SimpleOnPageChangeListener() {
@@ -199,10 +204,10 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Called when a new page (either a [ReaderPage] or [ChapterTransition]) is marked as active
      */
     private fun onPageChange(position: Int) {
-        if (suppressPageChanges) return
+        if (suppressPageChanges || destroyed || position != pager.currentItem) return
         val item = adapter.items.getOrNull(position)
         val page = if (item is ReaderSpread) {
-            requestedFocus?.takeIf(item::contains) ?: item.first
+            ReaderPositionPolicy.spreadFocus(requestedFocus, currentPage as? ReaderPage, item.first, item::contains)
         } else {
             item
         }
@@ -322,7 +327,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             if (pager.isGone) {
                 val pages = chapters.currChapter.pages
                 if (!pages.isNullOrEmpty()) {
-                    moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])
+                    moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)], smoothScroll = false)
                     pager.isVisible = true
                 }
             } else {
@@ -348,12 +353,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             else -> -1
         }
         when {
-            belongsToChapter && previous is ReaderPage && position >= 0 -> moveToPage(previous)
+            belongsToChapter && previous is ReaderPage && position >= 0 -> moveToPage(previous, smoothScroll = false)
             belongsToChapter && position >= 0 -> pager.setCurrentItem(position, false)
             else -> {
                 val pages = chapters.currChapter.pages
                 if (!pages.isNullOrEmpty()) {
-                    moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])
+                    moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)], smoothScroll = false)
                 }
             }
         }
@@ -363,11 +368,15 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Tells this viewer to move to the given [page].
      */
     override fun moveToPage(page: ReaderPage) {
+        moveToPage(page, smoothScroll = true)
+    }
+
+    private fun moveToPage(page: ReaderPage, smoothScroll: Boolean) {
         val position = adapter.positionOf(page)
         if (position != -1) {
             requestedFocus = page
             val currentPosition = pager.currentItem
-            pager.setCurrentItem(position, true)
+            pager.setCurrentItem(position, smoothScroll)
             // manually call onPageChange since ViewPager listener is not triggered in this case
             if (currentPosition == position) {
                 onPageChange(position)
@@ -543,7 +552,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             getPageHolder(spread.second)?.imageLoaded == true
         ) {
             // Record both visible pages only after both images have actually decoded.
-            activity.onPageSelected(spread.second)
+            activity.viewModel.onPageRendered(spread.second)
         }
     }
 

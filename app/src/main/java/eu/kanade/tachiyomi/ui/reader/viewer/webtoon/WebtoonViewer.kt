@@ -15,6 +15,8 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.WebtoonLayoutManager
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.ReaderViewportAnchor
+import eu.kanade.tachiyomi.ui.reader.ReaderViewportState
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
@@ -29,6 +31,7 @@ import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.abs
 
 /**
  * Implementation of a [Viewer] to display pages with a [RecyclerView].
@@ -52,7 +55,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     /**
      * Distance to scroll when the user taps on one side of the recycler view.
      */
-    private val scrollDistance = activity.resources.displayMetrics.heightPixels * 3 / 4
+    private val scrollDistance get() = (recycler.height.takeIf { it > 0 }
+        ?: activity.resources.displayMetrics.heightPixels) * 3 / 4
 
     /**
      * Layout manager of the recycler view.
@@ -74,13 +78,8 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      */
     private var currentPage: Any? = null
 
-    /**
-     * True right after the first layout restores [ViewerChapters.currChapter]'s requested page. The restore puts that
-     * page at the top, but [onScrolled] reports the last fully visible item, so layout passes (images decoding at the
-     * new width) would move progress forward on every fold/unfold and could switch to the next chapter. Holds the
-     * restored page until a real scroll or an explicit [moveToPage].
-     */
-    private var holdRestoredPage = false
+    private val viewport = ReaderViewportState()
+    private var destroyed = false
 
     private val threshold: Int =
         Injekt.get<ReaderPreferences>()
@@ -91,19 +90,31 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     init {
         recycler.setItemViewCacheSize(RECYCLER_VIEW_CACHE_SIZE)
         recycler.isVisible = false // Don't let the recycler layout yet
+        recycler.isSaveEnabled = false // Adapter indices/pixel offsets belong to the old window width.
+        recycler.setSaveFromParentEnabled(false)
         recycler.layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         recycler.isFocusable = false
         recycler.itemAnimator = null
         recycler.layoutManager = layoutManager
         recycler.adapter = adapter
+        recycler.viewportChangeListener = {
+            // Called before measurement changes image heights, while the old scene is still measurable.
+            saveViewport()
+            viewport.anchor?.let(viewport::restore)
+            recycler.stopScroll()
+        }
+        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (viewport.isRestoring) recycler.post { applyViewportAnchor() }
+        }
         recycler.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    if (newState == RecyclerView.SCROLL_STATE_DRAGGING) viewport.beginUserScroll()
+                }
+
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                    if (holdRestoredPage) {
-                        // Layout-only callbacks report (0, 0); any real movement releases the hold.
-                        if (dx == 0 && dy == 0) return
-                        holdRestoredPage = false
-                    }
+                    // Image measurement and anchor correction can emit non-zero dx/dy too.
+                    if (viewport.isRestoring) return
                     onScrolled()
 
                     if ((dy > threshold || dy < -threshold) && activity.viewModel.state.value.menuVisible) {
@@ -212,6 +223,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Destroys this viewer. Called when leaving the reader or swapping viewers.
      */
     override fun destroy() {
+        destroyed = true
         super.destroy()
         scope.cancel()
     }
@@ -261,9 +273,12 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         if (recycler.isGone) {
             logcat { "Recycler first layout" }
             val pages = chapters.currChapter.pages ?: return
-            moveToPage(pages[min(chapters.currChapter.requestedPage, pages.lastIndex)])
-            holdRestoredPage = true
+            if (pages.isEmpty()) return
+            val page = pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)]
+            restoreViewport(page, activity.viewModel.viewportFor(page))
             recycler.isVisible = true
+        } else if (viewport.isRestoring) {
+            recycler.post { applyViewportAnchor() }
         }
     }
 
@@ -271,21 +286,33 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Tells this viewer to move to the given [page].
      */
     override fun moveToPage(page: ReaderPage) {
-        holdRestoredPage = false
+        restoreViewport(page, ReaderViewportAnchor(page.chapter.chapter.id ?: -1, page.index))
+    }
+
+    private fun restoreViewport(page: ReaderPage, anchor: ReaderViewportAnchor) {
         val position = adapter.items.indexOf(page)
         if (position != -1) {
+            viewport.restore(anchor)
+            activity.viewModel.saveViewport(anchor)
             layoutManager.scrollToPositionWithOffset(position, 0)
-            if (layoutManager.findLastEndVisibleItemPosition() == -1) {
-                onScrolled(pos = position)
-            }
+            val allowPreload = checkAllowPreload(page)
+            currentPage = page
+            onPageSelected(page, allowPreload)
+            recycler.post { applyViewportAnchor() }
         } else {
             logcat { "Page $page not found in adapter" }
         }
     }
 
-    fun onScrolled(pos: Int? = null) {
-        val position = pos ?: layoutManager.findLastEndVisibleItemPosition()
+    fun onScrolled() {
+        if (viewport.isRestoring) return
+        // The scene at the top is the reading anchor, not a later page temporarily
+        // exposed at the bottom while images acquire their real heights.
+        val position = layoutManager.findFirstVisibleItemPosition()
         val item = adapter.items.getOrNull(position)
+        captureViewport()?.second?.let { anchor ->
+            if (viewport.observe(anchor)) activity.viewModel.saveViewport(anchor)
+        }
         val allowPreload = checkAllowPreload(item as? ReaderPage)
         if (item != null && currentPage != item) {
             currentPage = item
@@ -296,10 +323,61 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
         }
     }
 
+    private fun captureViewport(): Pair<ReaderPage, ReaderViewportAnchor>? {
+        val first = layoutManager.findFirstVisibleItemPosition()
+        val last = layoutManager.findLastVisibleItemPosition()
+        if (first < 0 || last < first) return null
+        for (position in first..last) {
+            val page = adapter.items.getOrNull(position) as? ReaderPage ?: continue
+            val child = layoutManager.findViewByPosition(position) ?: continue
+            if (child.height <= 0) continue
+            val id = page.chapter.chapter.id ?: continue
+            return page to ReaderViewportAnchor.capture(id, page.index, child.top, child.height, recycler.paddingTop)
+        }
+        return null
+    }
+
+    override fun saveViewport() {
+        if (!viewport.isRestoring) {
+            captureViewport()?.let { (page, anchor) ->
+                viewport.observe(anchor)
+                // Persist the source page before the Activity's SavedState snapshot.
+                if (currentPage != page) {
+                    val allowPreload = checkAllowPreload(page)
+                    currentPage = page
+                    onPageSelected(page, allowPreload)
+                }
+            }
+        }
+        viewport.anchor?.let(activity.viewModel::saveViewport)
+    }
+
+    /** Reapply the same fraction after the anchored image has decoded at the new width. */
+    fun onPageLayout(page: ReaderPage) {
+        if (viewport.isRestoring && viewport.anchor?.matches(page.chapter.chapter.id ?: -1, page.index) == true) {
+            recycler.post { applyViewportAnchor() }
+        }
+    }
+
+    private fun applyViewportAnchor() {
+        if (destroyed || !viewport.isRestoring) return
+        val anchor = viewport.anchor ?: return
+        val position = adapter.items.indexOfFirst { item ->
+            item is ReaderPage && anchor.matches(item.chapter.chapter.id ?: -1, item.index)
+        }
+        if (position < 0) return
+        val child = layoutManager.findViewByPosition(position)
+        val offset = anchor.pixelOffset(child?.height ?: 0)
+        if (child == null || abs(child.top - recycler.paddingTop - offset) > 1) {
+            layoutManager.scrollToPositionWithOffset(position, offset)
+        }
+    }
+
     /**
      * Scrolls up by [scrollDistance].
      */
     private fun scrollUp() {
+        viewport.beginUserScroll()
         if (config.usePageTransitions) {
             recycler.smoothScrollBy(0, -scrollDistance)
         } else {
@@ -311,6 +389,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
      * Scrolls down by [scrollDistance].
      */
     private fun scrollDown() {
+        viewport.beginUserScroll()
         if (config.usePageTransitions) {
             recycler.smoothScrollBy(0, scrollDistance)
         } else {
