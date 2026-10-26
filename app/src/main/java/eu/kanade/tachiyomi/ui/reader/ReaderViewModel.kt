@@ -493,7 +493,8 @@ class ReaderViewModel @JvmOverloads constructor(
 
     /** The second visible spread page is read, but is not the position to restore. */
     fun onPageRendered(page: ReaderPage) {
-        if (page is InsertPage || page.chapter != getCurrentChapter()) return
+        // The visible page changes before an adjacent chapter finishes loading.
+        if (page is InsertPage || page.chapter != visiblePage.value?.chapter) return
         viewModelScope.launchNonCancellable { updateChapterProgress(page.chapter, page) }
     }
 
