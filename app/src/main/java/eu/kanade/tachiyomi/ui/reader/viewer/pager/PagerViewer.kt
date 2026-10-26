@@ -308,7 +308,8 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Sets the active [chapters] on this pager.
      */
     private fun setChaptersInternal(chapters: ViewerChapters) {
-        val anchor = currentPage as? ReaderPage
+        val previous = currentPage
+        val sameChapter = viewerChapters?.currChapter == chapters.currChapter
         viewerChapters = chapters
         isSpreadMode = desiredSpreadMode()
         val forceTransition = config.alwaysShowChapterTransition ||
@@ -324,14 +325,38 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
                     moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])
                     pager.isVisible = true
                 }
-            } else if (anchor != null && adapter.positionOf(anchor) >= 0) {
-                moveToPage(anchor)
+            } else {
+                restorePosition(previous, sameChapter, chapters)
             }
         } finally {
             suppressPageChanges = false
         }
         currentPage = null
         if (pager.isVisible) onPageChange(pager.currentItem)
+    }
+
+    /**
+     * Keeps the pager on [previous] after the item list is rebuilt (spread <-> single, wide page, chapter switch).
+     * Spread and single lists have different lengths, so staying on the old index would show (and report as read)
+     * a page of another chapter. Without a usable anchor it falls back to the current chapter's requested page.
+     */
+    private fun restorePosition(previous: Any?, sameChapter: Boolean, chapters: ViewerChapters) {
+        val belongsToChapter = sameChapter || (previous as? ReaderPage)?.chapter == chapters.currChapter
+        val position = when (previous) {
+            is ReaderPage -> adapter.positionOf(previous)
+            is ChapterTransition -> adapter.items.indexOf(previous)
+            else -> -1
+        }
+        when {
+            belongsToChapter && previous is ReaderPage && position >= 0 -> moveToPage(previous)
+            belongsToChapter && position >= 0 -> pager.setCurrentItem(position, false)
+            else -> {
+                val pages = chapters.currChapter.pages
+                if (!pages.isNullOrEmpty()) {
+                    moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])
+                }
+            }
+        }
     }
 
     /**
@@ -500,7 +525,8 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
     private fun reflowSpread(force: Boolean = false) {
         if (destroyed) return
         if (force || desiredSpreadMode() != isSpreadMode) {
-            viewerChapters?.let(::setChapters)
+            // A chapter switch still waiting for the pager to settle must not be replaced by the older chapters.
+            (awaitingIdleViewerChapters ?: viewerChapters)?.let(::setChapters)
         }
     }
 

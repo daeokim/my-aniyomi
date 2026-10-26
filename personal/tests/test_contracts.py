@@ -58,7 +58,10 @@ class IntegrationContracts(unittest.TestCase):
         adapter = (JAVA / 'tachiyomi/ui/reader/viewer/pager/PagerViewerAdapter.kt').read_text()
         holder = (JAVA / 'tachiyomi/ui/reader/viewer/pager/PagerSpreadHolder.kt').read_text()
         self.assertIn('pager.addOnLayoutChangeListener', viewer)
-        self.assertIn('moveToPage(anchor)', viewer)
+        self.assertIn('restorePosition(previous, sameChapter, chapters)', viewer)
+        # Without a usable anchor the pager goes to the current chapter's page, never the stale index.
+        self.assertIn('moveToPage(pages[chapters.currChapter.requestedPage.coerceIn(0, pages.lastIndex)])', viewer)
+        self.assertIn('(awaitingIdleViewerChapters ?: viewerChapters)?.let(::setChapters)', viewer)
         self.assertIn('requestedFocus?.takeIf(item::contains)', viewer)
         self.assertIn('FoldLayoutPolicy.group(', adapter)
         self.assertIn('FoldLayoutPolicy.physicalPair(', holder)
