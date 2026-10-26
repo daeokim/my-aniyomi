@@ -627,6 +627,8 @@ class ReaderActivity : BaseActivity() {
     private fun setChapters(viewerChapters: ViewerChapters) {
         binding.readerContainer.removeView(loadingIndicator)
         viewModel.state.value.viewer?.setChapters(viewerChapters)
+        // A relaunch without saved state (e.g. fold/unfold) must reopen the chapter being read, not the first one.
+        viewerChapters.currChapter.chapter.id?.let { intent.putExtra("chapter", it) }
 
         lifecycleScope.launchIO {
             viewModel.getChapterUrl()?.let { url ->
@@ -692,7 +694,13 @@ class ReaderActivity : BaseActivity() {
     private fun openChapter(chapterId: Long) {
         viewModel.closeDialog()
         lifecycleScope.launch {
-            if (viewModel.loadChapterById(chapterId)) return@launch
+            val previousId = viewModel.state.value.currentChapter?.chapter?.id
+            if (viewModel.loadChapterById(chapterId)) {
+                // Position explicitly, like the prev/next buttons, instead of relying on the viewer's old anchor.
+                val chapter = viewModel.state.value.currentChapter?.chapter ?: return@launch
+                if (chapter.id != previousId) moveToPageIndex(if (chapter.read) 0 else chapter.last_page_read)
+                return@launch
+            }
             val mangaId = viewModel.state.value.manga?.id ?: return@launch
             startActivity(newIntent(this@ReaderActivity, mangaId, chapterId))
             finish()

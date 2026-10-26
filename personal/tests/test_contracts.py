@@ -65,6 +65,16 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('PagerPageHolder(context, viewer, page)', holder)
         self.assertIn('getPageHolder(spread.second)?.imageLoaded == true', viewer)
 
+    def test_fold_recreation_keeps_reading_chapter(self):
+        # Webtoon restore pins the requested page until a real scroll; layout-only (0, 0) callbacks cannot move it.
+        webtoon = (JAVA / 'tachiyomi/ui/reader/viewer/webtoon/WebtoonViewer.kt').read_text()
+        self.assertIn('if (dx == 0 && dy == 0) return', webtoon)
+        self.assertIn('holdRestoredPage = true\n            recycler.isVisible = true', webtoon)
+        self.assertIn('override fun moveToPage(page: ReaderPage) {\n        holdRestoredPage = false', webtoon)
+        reader = (JAVA / 'tachiyomi/ui/reader/ReaderActivity.kt').read_text()
+        self.assertIn('intent.putExtra("chapter", it)', reader)
+        self.assertIn('moveToPageIndex(if (chapter.read) 0 else chapter.last_page_read)', reader)
+
     def test_shared_catalog_reflows_and_keeps_independent_query_state(self):
         ui = (JAVA / 'presentation/browse/catalog/SourceCatalog.kt').read_text()
         self.assertIn('HorizontalPager', ui)
