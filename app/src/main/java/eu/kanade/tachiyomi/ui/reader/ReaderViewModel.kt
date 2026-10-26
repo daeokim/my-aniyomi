@@ -454,6 +454,12 @@ class ReaderViewModel @JvmOverloads constructor(
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
 
+        // Commit the visible position synchronously. A delayed database write for
+        // an older page must never overwrite the anchor used during fold recreation.
+        mutableState.update { it.copy(currentPage = page.index + 1) }
+        selectedChapter.requestedPage = page.index
+        chapterPageIndex = page.index
+
         // Save last page read and mark as read if needed
         viewModelScope.launchNonCancellable {
             updateChapterProgress(selectedChapter, page)
@@ -470,6 +476,26 @@ class ReaderViewModel @JvmOverloads constructor(
         }
 
         eventChannel.trySend(Event.PageChanged)
+    }
+
+    fun viewportFor(page: ReaderPage): ReaderViewportAnchor {
+        val id = page.chapter.chapter.id ?: return ReaderViewportAnchor(-1, page.index)
+        val matches = savedState.get<Long>("viewport_chapter") == id &&
+            savedState.get<Int>("viewport_page") == page.index
+        return ReaderViewportAnchor(id, page.index, if (matches) savedState.get<Float>("viewport_fraction") ?: 0f else 0f)
+    }
+
+    fun saveViewport(position: ReaderViewportAnchor) {
+        savedState["viewport_chapter"] = position.chapterId
+        savedState["viewport_page"] = position.pageIndex
+        savedState["viewport_fraction"] = ReaderViewportAnchor.normalizedFraction(position.offsetFraction)
+    }
+
+    /** The second visible spread page is read, but is not the position to restore. */
+    fun onPageRendered(page: ReaderPage) {
+        // The visible page changes before an adjacent chapter finishes loading.
+        if (page is InsertPage || page.chapter != visiblePage.value?.chapter) return
+        viewModelScope.launchNonCancellable { updateChapterProgress(page.chapter, page) }
     }
 
     private fun downloadNextChapters() {
@@ -540,12 +566,6 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     private suspend fun updateChapterProgress(readerChapter: ReaderChapter, page: Page) {
         val pageIndex = page.index
-
-        mutableState.update {
-            it.copy(currentPage = pageIndex + 1)
-        }
-        readerChapter.requestedPage = pageIndex
-        chapterPageIndex = pageIndex
 
         if (!incognitoMode && page.status != Page.State.ERROR) {
             readerChapter.chapter.last_page_read = pageIndex

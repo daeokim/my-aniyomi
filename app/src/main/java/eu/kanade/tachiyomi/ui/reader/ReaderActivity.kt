@@ -263,8 +263,14 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun onPause() {
+        viewModel.state.value.viewer?.saveViewport()
         viewModel.flushReadTimer()
         super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        viewModel.state.value.viewer?.saveViewport()
+        super.onSaveInstanceState(outState)
     }
 
     /**

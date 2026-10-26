@@ -31,6 +31,9 @@ interface Viewer {
      */
     fun moveToPage(page: ReaderPage)
 
+    /** Checkpoint the content anchor before Android recreates the window. */
+    fun saveViewport() {}
+
     /**
      * Called from the containing activity when a key [event] is received. It should return true
      * if the event was handled, false otherwise.

@@ -52,7 +52,14 @@ class WebtoonRecyclerView @JvmOverloads constructor(
     var tapListener: ((MotionEvent) -> Unit)? = null
     var longTapListener: ((MotionEvent) -> Boolean)? = null
 
+    var viewportChangeListener: (() -> Unit)? = null
+
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+        if (measuredWidth > 0 && measuredHeight > 0 &&
+            (MeasureSpec.getSize(widthSpec) != measuredWidth || MeasureSpec.getSize(heightSpec) != measuredHeight)
+        ) {
+            viewportChangeListener?.invoke()
+        }
         halfWidth = MeasureSpec.getSize(widthSpec) / 2
         halfHeight = MeasureSpec.getSize(heightSpec) / 2
         if (!heightSet) {
