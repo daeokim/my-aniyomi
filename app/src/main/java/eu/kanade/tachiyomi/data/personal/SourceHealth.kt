@@ -1,7 +1,8 @@
 package eu.kanade.tachiyomi.data.personal
 
-import java.net.*
-import javax.net.ssl.SSLException
+import eu.kanade.tachiyomi.network.TransportErrors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 
 /** Records the stage of real user requests; never stores URLs, cookies or credentials. */
 object SourceHealth {
@@ -9,10 +10,13 @@ object SourceHealth {
     fun message(stage: String, error: Throwable): String {
         val chain = generateSequence(error) { it.cause }.take(8).toList()
         val message = chain.mapNotNull { it.message }.joinToString(" ").lowercase()
+        val transport = TransportErrors.kind(error)
         val reason = when {
-            chain.any { it is UnknownHostException } -> "주소/DNS 연결 실패"
-            chain.any { it is SSLException } -> "보안 연결 실패"
-            chain.any { it is SocketTimeoutException } -> "연결 시간 초과"
+            chain.any { it is TimeoutCancellationException } -> "응답 시간 초과"
+            transport == TransportErrors.Kind.DNS -> "주소/DNS 연결 실패"
+            transport == TransportErrors.Kind.SECURITY -> "보안 연결 실패"
+            transport == TransportErrors.Kind.TIMEOUT -> "연결 시간 초과"
+            transport == TransportErrors.Kind.CONNECTION -> "네트워크 연결 끊김"
             "403" in message || "cloudflare" in message || "challenge" in message -> "접근 제한 또는 사이트 확인 필요"
             "401" in message || "로그인" in message -> "로그인 또는 접근 확인 필요"
             "404" in message -> "대상을 찾을 수 없음"
@@ -20,6 +24,24 @@ object SourceHealth {
             else -> "불러오기 실패"
         }
         return "$stage · $reason"
+    }
+
+    /** Record completed user requests, including deadlines, but never navigation cancellation. */
+    internal suspend fun <T> track(
+        sourceKey: String,
+        stage: String,
+        recorder: (String, String, Throwable?) -> Unit = ::record,
+        block: suspend () -> T,
+    ): T = try {
+        block().also { recorder(sourceKey, stage, null) }
+    } catch (error: TimeoutCancellationException) {
+        recorder(sourceKey, stage, error)
+        throw error
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        recorder(sourceKey, stage, error)
+        throw error
     }
     fun record(sourceKey: String, stage: String, error: Throwable?) {
         val key = "$sourceKey:$stage"

@@ -78,26 +78,27 @@ class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
             val results = coroutineScope { available.map { source -> async {
                 gate.withPermit {
                     try {
-                        val entries = withTimeout(25_000) {
-                            if (source.manga) {
-                                val src = mangaSources.get(source.id) as? eu.kanade.tachiyomi.source.CatalogueSource ?: error("Source unavailable")
-                                require(!latest || src.supportsLatest) { "최신 목록 미지원" }
-                                val rows = if (latest) src.getLatestUpdates(1) else src.getPopularManga(1)
-                                rows.mangas.take(12).map { remote ->
-                                    val item = Injekt.get<tachiyomi.domain.entries.manga.interactor.NetworkToLocalManga>().await(remote.toDomainManga(source.id))
-                                    HomeEntry(item.id, item.title, item.source, item.url, true, item.asMangaCover())
-                                }
-                            } else {
-                                val src = animeSources.get(source.id) ?: error("Source unavailable")
-                                require(!latest || src.supportsLatest) { "최신 목록 미지원" }
-                                val rows = if (latest) src.getLatestUpdates(1) else src.getPopularAnime(1)
-                                rows.animes.take(12).map { remote ->
-                                    val item = Injekt.get<tachiyomi.domain.entries.anime.interactor.NetworkToLocalAnime>().await(remote.toDomainAnime(source.id))
-                                    HomeEntry(item.id, item.title, item.source, item.url, false, item.asAnimeCover())
+                        val entries = SourceHealth.track("${if (source.manga) "manga" else "anime"}:${source.id}", "목록") {
+                            withTimeout(25_000) {
+                                if (source.manga) {
+                                    val src = mangaSources.get(source.id) as? eu.kanade.tachiyomi.source.CatalogueSource ?: error("Source unavailable")
+                                    require(!latest || src.supportsLatest) { "최신 목록 미지원" }
+                                    val rows = if (latest) src.getLatestUpdates(1) else src.getPopularManga(1)
+                                    rows.mangas.take(12).map { remote ->
+                                        val item = Injekt.get<tachiyomi.domain.entries.manga.interactor.NetworkToLocalManga>().await(remote.toDomainManga(source.id))
+                                        HomeEntry(item.id, item.title, item.source, item.url, true, item.asMangaCover())
+                                    }
+                                } else {
+                                    val src = animeSources.get(source.id) ?: error("Source unavailable")
+                                    require(!latest || src.supportsLatest) { "최신 목록 미지원" }
+                                    val rows = if (latest) src.getLatestUpdates(1) else src.getPopularAnime(1)
+                                    rows.animes.take(12).map { remote ->
+                                        val item = Injekt.get<tachiyomi.domain.entries.anime.interactor.NetworkToLocalAnime>().await(remote.toDomainAnime(source.id))
+                                        HomeEntry(item.id, item.title, item.source, item.url, false, item.asAnimeCover())
+                                    }
                                 }
                             }
                         }
-                        SourceHealth.record("${if (source.manga) "manga" else "anime"}:${source.id}", "목록", null)
                         entries to null
                     } catch (e: TimeoutCancellationException) { emptyList<HomeEntry>() to "${source.name} · 응답 시간 초과" }
                     catch (e: CancellationException) { throw e }

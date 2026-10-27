@@ -1,24 +1,7 @@
 package eu.kanade.tachiyomi.util.system
 
-import eu.kanade.tachiyomi.network.HttpException
-import java.net.ConnectException
-import java.net.NoRouteToHostException
-import java.net.SocketException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
-import java.util.concurrent.CancellationException
-import javax.net.ssl.SSLException
-
 object ConnectionRecovery {
-    fun isTransient(error: Throwable): Boolean {
-        val causes = generateSequence(error) { it.cause }.take(12).toList()
-        if (causes.any { it is CancellationException || it is SSLException || it is SecurityException || it is java.io.FileNotFoundException }) return false
-        if (causes.any { it is HttpException }) return false // Authentication, access and server responses need explicit user action.
-        return causes.any {
-            it is SocketTimeoutException || it is ConnectException || it is NoRouteToHostException ||
-                it is UnknownHostException || it is SocketException
-        }
-    }
+    fun isTransient(error: Throwable): Boolean = eu.kanade.tachiyomi.network.TransportErrors.isRetryable(error)
 
     /** mpv exposes a text log, not a structured HTTP error. Only explicit transport failures qualify. */
     fun isTransientPlayback(message: String): Boolean {

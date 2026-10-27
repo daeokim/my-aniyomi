@@ -55,6 +55,7 @@ fun <T : Any> SourceCatalog(
     onWeb: () -> Unit,
     itemsFor: (CatalogTab, Int) -> Flow<PagingData<StateFlow<T>>>,
     entryKey: (T) -> String,
+    notice: String? = null,
     card: @Composable (T) -> Unit,
 ) {
     val tabs = capability.tabs
@@ -66,6 +67,7 @@ fun <T : Any> SourceCatalog(
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { onTab(tabs[it].ordinal); showFilter = true } }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         Column {
+            notice?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall) }
             if (searchQuery.isNotBlank()) {
                 Text("검색 결과 · 소스 검색순", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
                 val queryKey = "$sourceKey:search:$filterKey"
@@ -175,9 +177,11 @@ private fun <T : Any> CatalogGridPage(
     LaunchedEffect(error, items.loadState.refresh, items.loadState.append) {
         if (error == null && items.loadState.refresh !is LoadState.Loading && items.loadState.append !is LoadState.Loading) connectionRetry.reset()
     }
-    LaunchedEffect(error, items.itemCount > 0) {
+    LaunchedEffect(error, items.itemCount > 0, items.loadState.refresh, items.loadState.append) {
         if (error != null) SourceHealth.record(sourceKey, "목록", error.error)
-        else if (items.itemCount > 0) SourceHealth.record(sourceKey, "목록", null)
+        else if (items.itemCount > 0 && items.loadState.refresh is LoadState.NotLoading && items.loadState.append !is LoadState.Loading) {
+            SourceHealth.record(sourceKey, "목록", null)
+        }
     }
     LaunchedEffect(state, key, restored) {
         snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }

@@ -12,6 +12,7 @@ import eu.kanade.presentation.webview.WebViewScreenContent
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.WebViewChallengeException
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.util.system.WebViewUtil
@@ -76,6 +77,11 @@ class WebViewActivity : BaseActivity() {
             }
         }
 
+        intent.getBundleExtra(REQUEST_HEADERS_KEY)?.let { supplied ->
+            // This replaces source headers: source cookies/authorization must not leak to the video host.
+            headers = WebViewChallengeException.safeHeaders(supplied.keySet().associateWith { supplied.getString(it).orEmpty() })
+        }
+
         setComposeContent {
             WebViewScreenContent(
                 onNavigateUp = { finish() },
@@ -131,6 +137,7 @@ class WebViewActivity : BaseActivity() {
         private const val SOURCE_KEY = "source_key"
         private const val TITLE_KEY = "title_key"
         private const val ANIME_KEY = "anime_key"
+        private const val REQUEST_HEADERS_KEY = "request_headers_key"
 
         fun newIntent(
             context: Context,
@@ -138,6 +145,7 @@ class WebViewActivity : BaseActivity() {
             sourceId: Long? = null,
             title: String? = null,
             isAnime: Boolean = false,
+            requestHeaders: Map<String, String>? = null,
         ): Intent {
             return Intent(context, WebViewActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -145,6 +153,11 @@ class WebViewActivity : BaseActivity() {
                 putExtra(SOURCE_KEY, sourceId)
                 putExtra(TITLE_KEY, title)
                 putExtra(ANIME_KEY, isAnime)
+                requestHeaders?.let { values ->
+                    putExtra(REQUEST_HEADERS_KEY, Bundle().apply {
+                        WebViewChallengeException.safeHeaders(values).forEach { (name, value) -> putString(name, value) }
+                    })
+                }
             }
         }
     }
