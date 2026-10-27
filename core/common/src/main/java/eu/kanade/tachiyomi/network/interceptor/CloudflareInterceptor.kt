@@ -48,7 +48,10 @@ class CloudflareInterceptor(
         // Because OkHttp's enqueue only handles IOExceptions, wrap the exception so that
         // we don't crash the entire app
         catch (e: CloudflareBypassException) {
-            throw WebViewChallengeException.forRequest(context.stringResource(MR.strings.information_cloudflare_bypass_failure), request, e)
+            throw WebViewChallengeException.forRequest(
+                "${context.stringResource(MR.strings.information_cloudflare_bypass_failure)} (${request.url.host}, HTTP ${response.code})",
+                request, e,
+            )
         } catch (e: Exception) {
             throw IOException(e)
         }

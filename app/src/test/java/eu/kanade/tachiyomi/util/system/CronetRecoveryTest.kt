@@ -38,6 +38,8 @@ class CronetRecoveryTest {
             SSLHandshakeException("connection reset"), HttpException(403), CancellationException(),
             cronet("ERR_CERT_AUTHORITY_INVALID"), cronet("ERR_SSL_PROTOCOL_ERROR"),
             cronet("ERR_CONNECTION_RESET", false), IOException("No space left on device"),
+            IOException("HTTP 403", cronet("ERR_CONNECTION_RESET")),
+            IOException("Cloudflare challenge", cronet("ERR_CONNECTION_RESET")),
         ).forEach { assertFalse(ConnectionRecovery.isTransient(it), it.toString()) }
         assertFalse(ConnectionRecovery.isTransient(IOException("net::ERR_CONNECTION_RESET", SSLHandshakeException("certificate"))))
         assertEquals(TransportErrors.Kind.SECURITY, TransportErrors.kind(cronet("ERR_CERT_DATE_INVALID")))
