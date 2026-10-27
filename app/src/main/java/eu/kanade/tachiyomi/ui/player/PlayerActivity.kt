@@ -23,6 +23,7 @@
 package eu.kanade.tachiyomi.ui.player
 
 import android.annotation.SuppressLint
+import androidx.appcompat.app.AlertDialog
 import android.app.PictureInPictureParams
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -75,6 +76,9 @@ import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.data.torrent.service.TorrentServerService
 import eu.kanade.tachiyomi.databinding.PlayerLayoutBinding
 import eu.kanade.tachiyomi.network.NetworkPreferences
+import eu.kanade.tachiyomi.network.WebViewChallengeException
+import eu.kanade.tachiyomi.ui.webview.WebViewActivity
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.player.controls.PlayerControls
 import eu.kanade.tachiyomi.ui.player.settings.AdvancedPlayerPreferences
@@ -212,8 +216,12 @@ class PlayerActivity : BaseActivity() {
                     "Unknown error",
                 )
                 withUIContext {
+                    viewModel.updateIsLoadingHosters(false)
+                    viewModel.updateIsLoadingEpisode(false)
                     setInitialEpisodeError(exception)
                 }
+                // Do not load a previous episode's links after the new request failed.
+                return@launchNonCancellable
             }
 
             viewModel.updateIsLoadingHosters(false)
@@ -1173,12 +1181,26 @@ class PlayerActivity : BaseActivity() {
      * this case the activity is closed and a toast is shown to the user.
      */
     private fun setInitialEpisodeError(error: Throwable) {
+        logcat(LogPriority.ERROR, error)
+        val challenge = WebViewChallengeException.find(error)
+        if (challenge != null && !isFinishing) {
+            AlertDialog.Builder(this)
+                .setTitle("영상 서버 확인 필요")
+                .setMessage("${challenge.url.toHttpUrl().host}에서 사이트 확인이 필요합니다. 웹에서 확인한 뒤 회차를 다시 열어 주세요.")
+                .setPositiveButton("웹에서 확인") { _, _ ->
+                    startActivity(WebViewActivity.newIntent(this, challenge.url, requestHeaders = challenge.headers))
+                    finish()
+                }
+                .setNegativeButton("닫기") { _, _ -> finish() }
+                .setOnCancelListener { finish() }
+                .show()
+            return
+        }
         if (error is PlayerViewModel.ExceptionWithStringResource) {
             toast(error.stringResource)
         } else {
             toast(error.message)
         }
-        logcat(LogPriority.ERROR, error)
         finish()
     }
 

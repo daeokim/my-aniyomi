@@ -189,6 +189,7 @@ data class BrowseAnimeSourceScreen(
                 onWeb = onWebViewClick,
                 itemsFor = screenModel::catalogItems,
                 entryKey = { it.id.toString() },
+                notice = eu.kanade.presentation.browse.catalog.AnimeCatalogFilters.notice(screenModel.source.getFilterList()),
             ) { entry ->
                 CatalogCoverCard(
                     title = entry.title,

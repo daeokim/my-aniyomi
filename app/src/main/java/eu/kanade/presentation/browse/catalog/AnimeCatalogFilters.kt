@@ -5,6 +5,10 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 /** Snapshot values, never share mutable extension filter objects between pages. */
 object AnimeCatalogFilters {
+    /** A source can explain shared/limited catalogue lists without pretending to offer another ranking. */
+    fun notice(filters: AnimeFilterList): String? = filters.filterIsInstance<AnimeFilter.Header>()
+        .map { it.name }.firstOrNull { it.startsWith("목록 안내:") }?.removePrefix("목록 안내:")?.trim()?.takeIf { it.isNotBlank() }
+
     private fun flatten(filters: List<*>): List<Pair<String, AnimeFilter<*>>> = buildList {
         fun visit(items: List<*>, parent: String) {
             items.forEachIndexed { i, item ->

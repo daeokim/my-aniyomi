@@ -84,6 +84,7 @@ import eu.kanade.presentation.entries.components.ItemCover
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.data.coil.useBackground
+import eu.kanade.domain.entries.anime.model.hasCustomBackground
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.entries.anime.model.AnimeRelationGroup
@@ -120,7 +121,7 @@ fun AnimeInfoBox(
             Color.Transparent,
             MaterialTheme.colorScheme.background,
         )
-        AsyncImage(
+        if (!anime.backgroundUrl.isNullOrBlank() || anime.hasCustomBackground()) AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(anime)
                 .useBackground(true)

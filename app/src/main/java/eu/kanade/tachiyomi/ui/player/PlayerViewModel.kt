@@ -1394,13 +1394,20 @@ class PlayerViewModel @JvmOverloads constructor(
                     }
                     qualityIndex = Pair(hostIndex, vidIndex)
                 } else {
-                    EpisodeLoader.getHosters(currentEp.toDomainEpisode()!!, anime, source)
-                        .takeIf { it.isNotEmpty() }
-                        ?.also { currentHosterList = it }
-                        ?: run {
-                            currentHosterList = null
-                            throw ExceptionWithStringResource("Hoster list is empty", AYMR.strings.no_hosters)
+                    try {
+                        EpisodeLoader.getHosters(currentEp.toDomainEpisode()!!, anime, source)
+                            .takeIf { it.isNotEmpty() }
+                            ?.also { currentHosterList = it }
+                            ?: run {
+                                currentHosterList = null
+                                throw ExceptionWithStringResource("Hoster list is empty", AYMR.strings.no_hosters)
+                            }
+                    } catch (error: Exception) {
+                        if (error !is CancellationException) {
+                            eu.kanade.tachiyomi.data.personal.SourceHealth.record("anime:${source.id}", "재생", error)
                         }
+                        throw error
+                    }
                 }
 
                 val result = InitResult(

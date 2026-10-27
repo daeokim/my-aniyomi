@@ -29,7 +29,8 @@ fun Uri.toShareIntent(context: Context, type: String = "image/*", message: Strin
     }
 
     return Intent.createChooser(shareIntent, context.stringResource(MR.strings.action_share)).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        // createChooser copies the URI read grant; assigning flags would discard it for preview readers.
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }
 

@@ -73,17 +73,15 @@ class CrashLogUtil(
                 val availableExtension = availableExtensions[it.pkgName]
                 val hasUpdate = (availableExtension?.versionCode ?: 0) > it.versionCode
 
-                if (!hasUpdate && !it.isObsolete) return@mapNotNull null
-
                 """
                     - ${it.name}
                       Installed: ${it.versionName} / Available: ${availableExtension?.versionName ?: "?"}
-                      Orphaned: ${it.isObsolete}
+                      Update available: $hasUpdate / Orphaned: ${it.isObsolete}
                 """.trimIndent()
             }
 
         return if (extensionInfoList.isNotEmpty()) {
-            (listOf("Problematic extensions:") + extensionInfoList)
+            (listOf("Installed manga extensions:") + extensionInfoList)
                 .joinToString("\n")
         } else {
             null
@@ -99,17 +97,15 @@ class CrashLogUtil(
                 val availableExtension = availableExtensions[it.pkgName]
                 val hasUpdate = (availableExtension?.versionCode ?: 0) > it.versionCode
 
-                if (!hasUpdate && !it.isObsolete) return@mapNotNull null
-
                 """
                     - ${it.name}
                       Installed: ${it.versionName} / Available: ${availableExtension?.versionName ?: "?"}
-                      Obsolete: ${it.isObsolete}
+                      Update available: $hasUpdate / Obsolete: ${it.isObsolete}
                 """.trimIndent()
             }
 
         return if (extensionInfoList.isNotEmpty()) {
-            (listOf("Problematic extensions:") + extensionInfoList)
+            (listOf("Installed anime extensions:") + extensionInfoList)
                 .joinToString("\n")
         } else {
             null
