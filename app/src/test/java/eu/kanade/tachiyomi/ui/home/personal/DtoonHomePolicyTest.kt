@@ -6,6 +6,37 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class DtoonHomePolicyTest {
+    @Test fun `popular and latest retain separate entries and loading states for pager previews`() {
+        val popular = HomeFeedKey(null, false)
+        val latest = HomeFeedKey(null, true)
+        val entry = HomeEntry(1, "Popular", 2, "/one", true, null)
+        val state = DtoonHomeState().startFeed(popular, 1).finishFeed(popular, 1, listOf(entry), emptyList(), 1000).startFeed(latest, 2)
+        assertEquals(listOf(entry), state.feeds[popular]!!.entries)
+        assertFalse(state.feeds[popular]!!.loading)
+        assertTrue(state.feeds[latest]!!.loading)
+        assertTrue(state.feeds[latest]!!.entries.isEmpty())
+    }
+    @Test fun `switching categories cannot reuse another category's feed`() {
+        val manga = HomeFeedKey(MediaKind.MANGA, true)
+        val drama = HomeFeedKey(MediaKind.DRAMA, true)
+        val state = DtoonHomeState().startFeed(manga, 1).finishFeed(manga, 1, emptyList(), listOf("failed"), 1000).startFeed(drama, 2)
+        assertEquals(listOf("failed"), state.feeds[manga]!!.errors)
+        assertTrue(state.feeds[drama]!!.errors.isEmpty())
+    }
+    @Test fun `late response cannot overwrite a newer refresh of the same page`() {
+        val key = HomeFeedKey(null, true)
+        val state = DtoonHomeState().startFeed(key, 1).startFeed(key, 2)
+        assertSame(state, state.finishFeed(key, 1, emptyList(), listOf("old failure"), 1000))
+        assertTrue(state.feeds[key]!!.loading)
+        val done = state.finishFeed(key, 2, emptyList(), emptyList(), 2000)
+        assertFalse(done.feeds[key]!!.loading)
+        assertEquals(2000L, done.feeds[key]!!.updatedAt)
+    }
+    @Test fun `failed feeds are not marked as a fresh success cache`() {
+        val key = HomeFeedKey(null, false)
+        val done = DtoonHomeState().startFeed(key, 1).finishFeed(key, 1, emptyList(), listOf("offline"), 1000)
+        assertEquals(0L, done.feeds[key]!!.updatedAt)
+    }
     private val webtoon = 850164079243120301L
     private val drama = 850164079243120102L
     private fun row(id: Long, number: Double, complete: Boolean = false, bookmark: Boolean = false) =

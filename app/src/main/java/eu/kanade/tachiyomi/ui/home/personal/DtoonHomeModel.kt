@@ -54,20 +54,25 @@ class WorkIdentityResolver(private val fetch: suspend (Long) -> WorkIdentity?) {
         library[id] ?: cache[id] ?: fetch(id)?.also { cache[id] = it }
 }
 
-data class DtoonHomeState(val recent: List<HomeEntry> = emptyList(), val library: List<HomeEntry> = emptyList(), val sources: List<HomeSource> = emptyList(), val error: String? = null, val feed: List<HomeEntry> = emptyList(), val feedLoading: Boolean = false, val feedErrors: List<String> = emptyList())
+data class HomeFeedKey(val kind: MediaKind?, val latest: Boolean)
+data class HomeFeedState(val request: Long = 0, val entries: List<HomeEntry> = emptyList(), val loading: Boolean = false, val errors: List<String> = emptyList(), val updatedAt: Long = 0)
+data class DtoonHomeState(val recent: List<HomeEntry> = emptyList(), val library: List<HomeEntry> = emptyList(), val sources: List<HomeSource> = emptyList(), val error: String? = null, val feeds: Map<HomeFeedKey, HomeFeedState> = emptyMap()) {
+    fun startFeed(key: HomeFeedKey, request: Long) = copy(feeds = feeds + (key to HomeFeedState(request = request, loading = true)))
+    fun finishFeed(key: HomeFeedKey, request: Long, entries: List<HomeEntry>, errors: List<String>, now: Long): DtoonHomeState =
+        if (feeds[key]?.request != request) this else copy(feeds = feeds + (key to HomeFeedState(request, entries, false, errors, if (errors.isEmpty()) now else 0)))
+}
 
 class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
     private var feedJob: Job? = null
-    private val cache = linkedMapOf<Pair<MediaKind?, Boolean>, Pair<Long, List<HomeEntry>>>()
+    private var feedRequest = 0L
     fun browse(kind: MediaKind?, latest: Boolean, refresh: Boolean = false) {
         feedJob?.cancel()
-        val key = kind to latest
-        val cached = cache[key]
-        if (!refresh && cached != null && System.currentTimeMillis() - cached.first < 300_000) {
-            mutableState.update { it.copy(feed = cached.second, feedLoading = false, feedErrors = emptyList()) }; return
-        }
+        val key = HomeFeedKey(kind, latest)
+        val cached = state.value.feeds[key]
+        if (!refresh && cached != null && !cached.loading && cached.updatedAt > 0 && System.currentTimeMillis() - cached.updatedAt < 300_000) return
+        val request = ++feedRequest
+        mutableState.update { it.startFeed(key, request) }
         feedJob = screenModelScope.launch(Dispatchers.IO) {
-            mutableState.update { it.copy(feed = emptyList(), feedLoading = true, feedErrors = emptyList()) }
             // Bound requests and interleave per-source results; no claim of a cross-source popularity rank.
             val available = HomeFeedPolicy.pick(
                 mangaSources.getCatalogueSources().filter { it.lang == "ko" }.map { HomeSource(it.id, it.name, true, it.supportsLatest) } +
@@ -106,11 +111,7 @@ class DtoonHomeModel : StateScreenModel<DtoonHomeState>(DtoonHomeState()) {
                 }
             } }.awaitAll() }
             val entries = (0 until 12).flatMap { i -> results.mapNotNull { it.first.getOrNull(i) } }.distinctBy { it.key }
-            if (results.none { it.second != null }) {
-                cache[key] = System.currentTimeMillis() to entries
-                if (cache.size > 16) cache.remove(cache.keys.first())
-            }
-            mutableState.update { it.copy(feed = entries, feedLoading = false, feedErrors = results.mapNotNull { row -> row.second }) }
+            mutableState.update { it.finishFeed(key, request, entries, results.mapNotNull { row -> row.second }, System.currentTimeMillis()) }
         }
     }
     private val mangaSources = Injekt.get<MangaSourceManager>()

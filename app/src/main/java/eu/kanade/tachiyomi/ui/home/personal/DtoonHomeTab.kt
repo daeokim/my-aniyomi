@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.home.personal
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
@@ -58,17 +60,15 @@ data object DtoonHomeTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
-        val gridState = rememberLazyGridState()
         val homeActive = LocalTabNavigator.current.current == DtoonHomeTab
-        val scrollRequest by scrollToTopRequests.collectAsState()
+        val rootScrollRequest by scrollToTopRequests.collectAsState()
+        var pageScrollRequest by remember { mutableIntStateOf(0) }
+        val resetKey = rootScrollRequest to pageScrollRequest
+        val pager = rememberPagerState(initialPage = 1) { 3 }
         var category by rememberSaveable { mutableIntStateOf(-2) }
-        var feedMode by rememberSaveable { mutableIntStateOf(1) }
-        LaunchedEffect(category, feedMode, homeActive, scrollRequest) {
-            if (homeActive) gridState.scrollToItem(0)
-        }
         val selectCategory: (Int) -> Unit = {
             category = it
-            scope.launch { gridState.scrollToItem(0) }
+            pageScrollRequest++
         }
         // Saved by key so the long-press dialog survives fold/unfold activity recreation.
         var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -76,7 +76,7 @@ data object DtoonHomeTab : Tab {
         var showAllSources by rememberSaveable { mutableStateOf(false) }
         var searchMenu by remember { mutableStateOf(false) }
         var revision by remember { mutableIntStateOf(0) }
-        val selectedEntry = selectedKey?.let { key -> (state.recent + state.library + state.feed).firstOrNull { it.key == key } }
+        val selectedEntry = selectedKey?.let { key -> (state.recent + state.library + state.feeds.values.flatMap { it.entries }).firstOrNull { it.key == key } }
         if (selectedEntry != null) {
             val members = remember(selectedEntry.key, revision) { WorkLinks.members(selectedEntry.key) }
             val alternatives = (state.library + state.recent).distinctBy { it.key }
@@ -123,71 +123,110 @@ data object DtoonHomeTab : Tab {
             }
             state.error?.let { Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
             val kind = MediaKind.entries.getOrNull(category)
-            if (category != -1) TabRow(selectedTabIndex = feedMode) {
-                listOf("인기", "최신", "보관함").forEachIndexed { i, label -> Tab(selected = feedMode == i, onClick = {
-                    feedMode = i
-                    scope.launch { gridState.scrollToItem(0) }
-                }, text = { Text(label) }) }
+            if (category != -1) TabRow(selectedTabIndex = pager.currentPage) {
+                listOf("인기", "최신", "보관함").forEachIndexed { i, label ->
+                    Tab(selected = pager.currentPage == i, onClick = {
+                        if (pager.settledPage == i && !pager.isScrollInProgress) pageScrollRequest++
+                        scope.launch { pager.animateScrollToPage(i) }
+                    }, text = { Text(label) })
+                }
             }
-            LaunchedEffect(category, feedMode, state.sources) {
-                if (category != -1 && feedMode != 2 && state.sources.isNotEmpty()) model.browse(kind, feedMode == 1)
+            LaunchedEffect(category, pager.settledPage, state.sources, homeActive) {
+                if (homeActive && category != -1 && pager.settledPage != 2 && state.sources.isNotEmpty()) {
+                    model.browse(kind, pager.settledPage == 1)
+                }
             }
-            val entries = (when {
-                category == -1 -> state.recent
-                feedMode == 2 -> state.library.filter { kind == null || it.kind == kind }
-                else -> state.feed
-            }).distinctBy { WorkLinks.members(it.key).minOrNull() ?: it.key }
-            val sources = if (category == -1) emptyList() else state.sources.filter { kind == null || it.kind == kind }
-            BoxWithConstraints(Modifier.weight(1f)) {
-                LazyVerticalGrid(columns = GridCells.Adaptive(if (maxWidth < 600.dp) 96.dp else 120.dp), state = gridState,
-                    contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (category == -1 && entries.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text("아직 읽거나 본 기록이 없습니다. 미디어 분류를 선택해 소스를 열어 주세요.") }
-                    if (category == -2 && state.recent.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) { Text("계속 보기", style = MaterialTheme.typography.titleMedium) }
-                        items(state.recent.take(6), key = { "continue:${it.key}" }) { entry ->
-                            CatalogCoverCard(entry.title, entry.cover, listOfNotNull(model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = { scope.launch {
-                                if (entry.manga) {
-                                    val chapter = ResumeResolver.manga(entry.id)
-                                    if (chapter != null) context.startActivity(ReaderActivity.newIntent(context, entry.id, chapter.id)) else navigator.push(MangaScreen(entry.id))
-                                } else {
-                                    val episode = ResumeResolver.anime(entry.id)
-                                    if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
-                                }
-                            } }, onLongClick = { selectedKey = entry.key })
-                        }
-                    }
-                    if (category != -1 && feedMode != 2) {
-                        item(span = { GridItemSpan(maxLineSpan) }) { Row { Text("소스별 ${if (feedMode == 1) "최신" else "인기"} · 한국어 소스 최대 6개 교차 표시", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall); TextButton(onClick = { model.browse(kind, feedMode == 1, true) }) { Text("새로고침") } } }
-                        if (state.feedLoading) item(span = { GridItemSpan(maxLineSpan) }) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                        state.feedErrors.forEach { error -> item(span = { GridItemSpan(maxLineSpan) }) { Text(error, style = MaterialTheme.typography.labelSmall) } }
-                    }
-                    if (sources.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) { Text("소스 탐색 · 인기 / 최신 / 요일별 / 완결", style = MaterialTheme.typography.titleSmall) }
-                        items(if (showAllSources) sources else sources.take(6), key = { "source:${it.manga}:${it.id}" }) { source ->
-                            OutlinedButton(onClick = { navigator.push(if (source.manga) BrowseMangaSourceScreen(source.id, null) else BrowseAnimeSourceScreen(source.id, null)) }) { Text(source.name, maxLines = 2) }
-                        }
-                        if (sources.size > 6) item(span = { GridItemSpan(maxLineSpan) }) {
-                            TextButton(onClick = { showAllSources = !showAllSources }) { Text(if (showAllSources) "소스 접기" else "전체 소스 ${sources.size}개 보기") }
-                        }
-                    } else if (category >= 0) item(span = { GridItemSpan(maxLineSpan) }) { Text("설치된 소스가 없습니다. 탐색 → 확장에서 소스를 설치하세요.") }
-                    if (entries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (category == -1) "계속 보기 · 길게 눌러 소스 연결" else if (feedMode == 2) "내 보관함" else if (feedMode == 1) "최신 작품" else "인기 작품", style = MaterialTheme.typography.titleMedium) }
-                    items(entries, key = { it.key }) { entry ->
-                        CatalogCoverCard(entry.title, entry.cover, listOfNotNull(entry.kind.label, model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = {
-                            if (category != -1) navigator.push(if (entry.manga) MangaScreen(entry.id) else AnimeScreen(entry.id))
-                            else scope.launch {
-                                if (entry.manga) {
-                                    val chapter = ResumeResolver.manga(entry.id)
-                                    if (chapter != null) context.startActivity(ReaderActivity.newIntent(context, entry.id, chapter.id)) else navigator.push(MangaScreen(entry.id))
-                                } else {
-                                    val episode = ResumeResolver.anime(entry.id)
-                                    if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
-                                }
-                            }
-                        }, onLongClick = { selectedKey = entry.key })
-                    }
+            if (category == -1) {
+                Box(Modifier.weight(1f)) {
+                    HomeFeedPage(model, state, category, pager.settledPage, homeActive, resetKey,
+                        showAllSources, { showAllSources = !showAllSources }, { selectedKey = it })
+                }
+            } else {
+                HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { it }) { page ->
+                    HomeFeedPage(model, state, category, page, homeActive && pager.settledPage == page, resetKey,
+                        showAllSources, { showAllSources = !showAllSources }, { selectedKey = it })
                 }
             }
         }
         LaunchedEffect(Unit) { (context as? MainActivity)?.ready = true }
+    }
+}
+
+
+/** Separate page content and grid state keep cached popular/latest previews from sharing a scrolled list. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HomeFeedPage(
+    model: DtoonHomeModel,
+    state: DtoonHomeState,
+    category: Int,
+    feedMode: Int,
+    active: Boolean,
+    resetKey: Pair<Long, Int>,
+    showAllSources: Boolean,
+    onShowAllSources: () -> Unit,
+    onSelectEntry: (String) -> Unit,
+) {
+    val navigator = LocalNavigator.currentOrThrow
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val gridState = rememberLazyGridState()
+    val kind = MediaKind.entries.getOrNull(category)
+    val feed = state.feeds[HomeFeedKey(kind, feedMode == 1)] ?: HomeFeedState(loading = state.sources.isNotEmpty())
+    LaunchedEffect(category, active, resetKey) { gridState.scrollToItem(0) }
+    val entries = (when {
+        category == -1 -> state.recent
+        feedMode == 2 -> state.library.filter { kind == null || it.kind == kind }
+        else -> feed.entries
+    }).distinctBy { WorkLinks.members(it.key).minOrNull() ?: it.key }
+    val sources = if (category == -1) emptyList() else state.sources.filter { kind == null || it.kind == kind }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        LazyVerticalGrid(columns = GridCells.Adaptive(if (maxWidth < 600.dp) 96.dp else 120.dp), state = gridState,
+            contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (category == -1 && entries.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text("아직 읽거나 본 기록이 없습니다. 미디어 분류를 선택해 소스를 열어 주세요.") }
+            if (category == -2 && state.recent.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Text("계속 보기", style = MaterialTheme.typography.titleMedium) }
+                items(state.recent.take(6), key = { "continue:${it.key}" }) { entry ->
+                    CatalogCoverCard(entry.title, entry.cover, listOfNotNull(model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = { scope.launch {
+                        if (entry.manga) {
+                            val chapter = ResumeResolver.manga(entry.id)
+                            if (chapter != null) context.startActivity(ReaderActivity.newIntent(context, entry.id, chapter.id)) else navigator.push(MangaScreen(entry.id))
+                        } else {
+                            val episode = ResumeResolver.anime(entry.id)
+                            if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
+                        }
+                    } }, onLongClick = { onSelectEntry(entry.key) })
+                }
+            }
+            if (category != -1 && feedMode != 2) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Row { Text("소스별 ${if (feedMode == 1) "최신" else "인기"} · 한국어 소스 최대 6개 교차 표시", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall); TextButton(onClick = { model.browse(kind, feedMode == 1, true) }) { Text("새로고침") } } }
+                if (feed.loading) item(span = { GridItemSpan(maxLineSpan) }) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                feed.errors.forEach { error -> item(span = { GridItemSpan(maxLineSpan) }) { Text(error, style = MaterialTheme.typography.labelSmall) } }
+            }
+            if (sources.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Text("소스 탐색 · 인기 / 최신 / 요일별 / 완결", style = MaterialTheme.typography.titleSmall) }
+                items(if (showAllSources) sources else sources.take(6), key = { "source:${it.manga}:${it.id}" }) { source ->
+                    OutlinedButton(onClick = { navigator.push(if (source.manga) BrowseMangaSourceScreen(source.id, null) else BrowseAnimeSourceScreen(source.id, null)) }) { Text(source.name, maxLines = 2) }
+                }
+                if (sources.size > 6) item(span = { GridItemSpan(maxLineSpan) }) {
+                    TextButton(onClick = { onShowAllSources() }) { Text(if (showAllSources) "소스 접기" else "전체 소스 ${sources.size}개 보기") }
+                }
+            } else if (category >= 0) item(span = { GridItemSpan(maxLineSpan) }) { Text("설치된 소스가 없습니다. 탐색 → 확장에서 소스를 설치하세요.") }
+            if (entries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (category == -1) "계속 보기 · 길게 눌러 소스 연결" else if (feedMode == 2) "내 보관함" else if (feedMode == 1) "최신 작품" else "인기 작품", style = MaterialTheme.typography.titleMedium) }
+            items(entries, key = { it.key }) { entry ->
+                CatalogCoverCard(entry.title, entry.cover, listOfNotNull(entry.kind.label, model.sourceName(entry), HomeRecentPolicy.progressLabel(entry.progress)).joinToString(" · "), onClick = {
+                    if (category != -1) navigator.push(if (entry.manga) MangaScreen(entry.id) else AnimeScreen(entry.id))
+                    else scope.launch {
+                        if (entry.manga) {
+                            val chapter = ResumeResolver.manga(entry.id)
+                            if (chapter != null) context.startActivity(ReaderActivity.newIntent(context, entry.id, chapter.id)) else navigator.push(MangaScreen(entry.id))
+                        } else {
+                            val episode = ResumeResolver.anime(entry.id)
+                            if (episode != null) MainActivity.startPlayerActivity(context, entry.id, episode.id, Injekt.get<PlayerPreferences>().alwaysUseExternalPlayer().get()) else navigator.push(AnimeScreen(entry.id))
+                        }
+                    }
+                }, onLongClick = { onSelectEntry(entry.key) })
+            }
+        }
     }
 }
