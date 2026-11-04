@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
@@ -42,6 +44,9 @@ fun ReaderAppBars(
     chapterTitle: String?,
     navigateUp: () -> Unit,
     onClickTopAppBar: () -> Unit,
+    inLibrary: Boolean,
+    libraryActionEnabled: Boolean,
+    onAddToLibrary: () -> Unit,
     bookmarked: Boolean,
     onToggleBookmarked: () -> Unit,
     onOpenInWebView: (() -> Unit)?,
@@ -101,6 +106,15 @@ fun ReaderAppBars(
                     AppBarActions(
                         actions = persistentListOf<AppBar.AppBarAction>().builder()
                             .apply {
+                                add(
+                                    AppBar.Action(
+                                        title = stringResource(if (inLibrary) MR.strings.in_library else MR.strings.add_to_library),
+                                        icon = if (inLibrary) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                                        iconTint = MaterialTheme.colorScheme.primary.takeIf { inLibrary },
+                                        enabled = libraryActionEnabled && !inLibrary,
+                                        onClick = onAddToLibrary,
+                                    ),
+                                )
                                 add(
                                     AppBar.Action(
                                         title = stringResource(

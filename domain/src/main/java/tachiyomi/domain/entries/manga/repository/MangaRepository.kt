@@ -33,6 +33,9 @@ interface MangaRepository {
 
     suspend fun setMangaCategories(mangaId: Long, categoryIds: List<Long>)
 
+    /** Add only; an existing favorite keeps its categories and added date. */
+    suspend fun addMangaToLibrary(mangaId: Long, categoryIds: List<Long>): Manga
+
     suspend fun insertManga(manga: Manga): Long?
 
     suspend fun updateManga(update: MangaUpdate): Boolean
