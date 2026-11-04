@@ -30,7 +30,6 @@ import androidx.paging.PagingData
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import coil3.compose.AsyncImage
-import eu.kanade.tachiyomi.data.personal.PersonalStore
 import eu.kanade.tachiyomi.data.personal.SourceHealth
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -64,6 +63,7 @@ fun <T : Any> SourceCatalog(
     val holder = rememberSaveableStateHolder()
     var day by remember(sourceKey) { mutableIntStateOf(initialDay.coerceIn(1, 7)) }
     var showFilter by remember { mutableStateOf(true) }
+    var scrollRequest by remember(sourceKey) { mutableIntStateOf(0) }
     LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { onTab(tabs[it].ordinal); showFilter = true } }
     Box(Modifier.fillMaxSize().padding(contentPadding)) {
         Column {
@@ -73,12 +73,15 @@ fun <T : Any> SourceCatalog(
                 val queryKey = "$sourceKey:search:$filterKey"
                 holder.SaveableStateProvider(queryKey) {
                     val feed = remember(searchQuery, filterKey, revision) { itemsFor(CatalogTab.POPULAR, 0) }
-                    CatalogGridPage(sourceKey, queryKey, true, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
+                    CatalogGridPage(sourceKey, queryKey, true, scrollRequest, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
                 }
             } else {
                 TabRow(selectedTabIndex = pager.currentPage) {
                     tabs.forEachIndexed { i, tab ->
-                        Tab(selected = pager.currentPage == i, onClick = { scope.launch { pager.animateScrollToPage(i) } }, text = { Text(tab.label) })
+                        Tab(selected = pager.currentPage == i, onClick = {
+                            if (pager.settledPage == i && !pager.isScrollInProgress) scrollRequest++
+                            scope.launch { pager.animateScrollToPage(i) }
+                        }, text = { Text(tab.label) })
                     }
                 }
                 HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { tabs[it].name }) { page ->
@@ -108,7 +111,7 @@ fun <T : Any> SourceCatalog(
                             val queryKey = "$sourceKey:${tab.name}:$dayKey:$filterKey"
                             holder.SaveableStateProvider(queryKey) {
                                 val feed = remember(tab, dayKey, revision, filterKey) { itemsFor(tab, day) }
-                                CatalogGridPage(sourceKey, queryKey, pager.settledPage == page, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
+                                CatalogGridPage(sourceKey, queryKey, pager.settledPage == page, scrollRequest, feed.collectAsLazyPagingItems(), entryKey, onWeb, { showFilter = it }, card)
                             }
                         }
                     }
@@ -121,31 +124,23 @@ fun <T : Any> SourceCatalog(
     }
 }
 
-@OptIn(kotlinx.coroutines.FlowPreview::class)
 @Composable
 private fun <T : Any> CatalogGridPage(
     sourceKey: String,
     queryKey: String,
     active: Boolean,
+    scrollRequest: Int,
     items: LazyPagingItems<StateFlow<T>>,
     entryKey: (T) -> String,
     onWeb: () -> Unit,
     onFilterVisible: (Boolean) -> Unit,
     card: @Composable (T) -> Unit,
 ) {
-    val key = PersonalStore.key(queryKey)
-    val savedIndex = remember(key) { PersonalStore.number("grid_index:$key").get().coerceAtLeast(0) }
-    val savedOffset = remember(key) { PersonalStore.number("grid_offset:$key").get().coerceAtLeast(0) }
-    val state = rememberLazyGridState(savedIndex, savedOffset)
-    var restored by remember(key) { mutableStateOf(savedIndex == 0) }
-    LaunchedEffect(key, items.itemCount, items.loadState.append, items.loadState.refresh) {
-        if (!restored && items.itemCount > 0 && items.loadState.refresh !is LoadState.Loading) {
-            val index = savedIndex.coerceAtMost(items.itemCount - 1)
-            state.scrollToItem(index, if (index == savedIndex) savedOffset else 0)
-            if (index < savedIndex && items.loadState.append !is LoadState.Error && (items.loadState.append as? LoadState.NotLoading)?.endOfPaginationReached != true) {
-                items[index] // Trigger paging prefetch while restoring a saved position beyond page one.
-            } else restored = true
-        }
+    val state = rememberLazyGridState()
+    // Reset cached pager pages too. Clearing an outgoing page after it settles keeps the next visit at row one.
+    // Do not read old grid_index/grid_offset preferences or prefetch pages to restore a browsing position.
+    LaunchedEffect(queryKey, active, scrollRequest) {
+        state.scrollToItem(0)
     }
     val callback by rememberUpdatedState(onFilterVisible)
     val nested = remember {
@@ -183,19 +178,6 @@ private fun <T : Any> CatalogGridPage(
             SourceHealth.record(sourceKey, "목록", null)
         }
     }
-    LaunchedEffect(state, key, restored) {
-        snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
-            .distinctUntilChanged().debounce(250).collect { (i, offset) ->
-                if (restored && items.itemCount > 0 && items.loadState.refresh !is LoadState.Loading) {
-                    val value = items.peek(i)?.value
-                    if (value != null) {
-                        PersonalStore.number("grid_index:$key").set(i)
-                        PersonalStore.number("grid_offset:$key").set(offset)
-                        PersonalStore.text("grid_anchor:$key").set(entryKey(value))
-                    }
-                }
-            }
-    }
     val manualRetry = items::retry
     var showHealth by remember { mutableStateOf(false) }
     if (showHealth) AlertDialog(onDismissRequest = { showHealth = false },
@@ -219,16 +201,6 @@ private fun <T : Any> CatalogGridPage(
             Text("조건에 맞는 작품이 없습니다.", Modifier.padding(24.dp))
         }
         BoxWithConstraints(Modifier.weight(1f)) {
-            val columns = CatalogPolicy.columns(maxWidth.value)
-            var previousColumns by remember { mutableIntStateOf(columns) }
-            LaunchedEffect(columns, items.itemCount) {
-                if (columns != previousColumns && items.itemCount > 0) {
-                    val anchor = PersonalStore.text("grid_anchor:$key").get()
-                    val index = items.itemSnapshotList.items.indexOfFirst { entryKey(it.value) == anchor }
-                    if (index >= 0) state.scrollToItem(index, PersonalStore.number("grid_offset:$key").get().coerceAtLeast(0))
-                    previousColumns = columns
-                }
-            }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(if (maxWidth < 600.dp) 96.dp else 120.dp),
                 state = state,
