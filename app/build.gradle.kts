@@ -26,8 +26,8 @@ android {
     defaultConfig {
         applicationId = "xyz.jmir.tachiyomi.mi"
 
-        versionCode = 13222
-        versionName = "Dtoon10.2"
+        versionCode = 13223
+        versionName = "Dtoon10.3"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getGitSha()}\"")
