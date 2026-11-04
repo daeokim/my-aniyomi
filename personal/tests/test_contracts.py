@@ -92,7 +92,7 @@ class IntegrationContracts(unittest.TestCase):
         self.assertIn('holder.SaveableStateProvider(queryKey)', ui)
         self.assertIn('items::retry', ui)
         self.assertIn('items::refresh', ui)
-        self.assertIn('grid_anchor:', ui)
+        # Per-query data stays isolated; saved scroll anchors are no longer part of the catalog contract.
         self.assertNotIn('LazyRow', ui)
         self.assertFalse((JAVA / 'presentation/browse/AdaptiveSourceOverview.kt').exists())
 

@@ -17,7 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.util.Tab
 import eu.kanade.presentation.browse.catalog.CatalogCoverCard
@@ -32,12 +34,20 @@ import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.player.settings.PlayerPreferences
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import tachiyomi.core.common.util.lang.withUIContext
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /** A real landing tab combining local manga and video progress, then all installed sources. */
 data object DtoonHomeTab : Tab {
+    private val scrollToTopRequests = MutableStateFlow(0L)
+
+    override suspend fun onReselect(navigator: Navigator) {
+        scrollToTopRequests.update { it + 1 }
+    }
+
     override val options: TabOptions
         @Composable get() = TabOptions(index = 0u, title = "홈", icon = rememberVectorPainter(Icons.Outlined.Home))
 
@@ -48,8 +58,18 @@ data object DtoonHomeTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
+        val gridState = rememberLazyGridState()
+        val homeActive = LocalTabNavigator.current.current == DtoonHomeTab
+        val scrollRequest by scrollToTopRequests.collectAsState()
         var category by rememberSaveable { mutableIntStateOf(-2) }
         var feedMode by rememberSaveable { mutableIntStateOf(1) }
+        LaunchedEffect(category, feedMode, homeActive, scrollRequest) {
+            if (homeActive) gridState.scrollToItem(0)
+        }
+        val selectCategory: (Int) -> Unit = {
+            category = it
+            scope.launch { gridState.scrollToItem(0) }
+        }
         // Saved by key so the long-press dialog survives fold/unfold activity recreation.
         var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
         var choosingLink by rememberSaveable { mutableStateOf(false) }
@@ -89,9 +109,9 @@ data object DtoonHomeTab : Tab {
             // No separate title row: the category chips and search share one line on the folded screen.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(start = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    FilterChip(selected = category == -2, onClick = { category = -2 }, label = { Text("전체") })
-                    FilterChip(selected = category == -1, onClick = { category = -1 }, label = { Text("계속 보기") })
-                    MediaKind.entries.forEachIndexed { i, kind -> FilterChip(selected = category == i, onClick = { category = i }, label = { Text(kind.label) }) }
+                    FilterChip(selected = category == -2, onClick = { selectCategory(-2) }, label = { Text("전체") })
+                    FilterChip(selected = category == -1, onClick = { selectCategory(-1) }, label = { Text("계속 보기") })
+                    MediaKind.entries.forEachIndexed { i, kind -> FilterChip(selected = category == i, onClick = { selectCategory(i) }, label = { Text(kind.label) }) }
                 }
                 Box {
                     IconButton(onClick = { searchMenu = true }) { Icon(Icons.Outlined.Search, contentDescription = "검색") }
@@ -104,7 +124,10 @@ data object DtoonHomeTab : Tab {
             state.error?.let { Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) }
             val kind = MediaKind.entries.getOrNull(category)
             if (category != -1) TabRow(selectedTabIndex = feedMode) {
-                listOf("인기", "최신", "보관함").forEachIndexed { i, label -> Tab(selected = feedMode == i, onClick = { feedMode = i }, text = { Text(label) }) }
+                listOf("인기", "최신", "보관함").forEachIndexed { i, label -> Tab(selected = feedMode == i, onClick = {
+                    feedMode = i
+                    scope.launch { gridState.scrollToItem(0) }
+                }, text = { Text(label) }) }
             }
             LaunchedEffect(category, feedMode, state.sources) {
                 if (category != -1 && feedMode != 2 && state.sources.isNotEmpty()) model.browse(kind, feedMode == 1)
@@ -116,7 +139,7 @@ data object DtoonHomeTab : Tab {
             }).distinctBy { WorkLinks.members(it.key).minOrNull() ?: it.key }
             val sources = if (category == -1) emptyList() else state.sources.filter { kind == null || it.kind == kind }
             BoxWithConstraints(Modifier.weight(1f)) {
-                LazyVerticalGrid(columns = GridCells.Adaptive(if (maxWidth < 600.dp) 96.dp else 120.dp), state = rememberLazyGridState(),
+                LazyVerticalGrid(columns = GridCells.Adaptive(if (maxWidth < 600.dp) 96.dp else 120.dp), state = gridState,
                     contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (category == -1 && entries.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text("아직 읽거나 본 기록이 없습니다. 미디어 분류를 선택해 소스를 열어 주세요.") }
                     if (category == -2 && state.recent.isNotEmpty()) {
