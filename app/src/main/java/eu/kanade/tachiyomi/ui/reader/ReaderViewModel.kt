@@ -107,6 +107,12 @@ class ReaderViewModel @JvmOverloads constructor(
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
 ) : ViewModel() {
 
+    private val readerLibrary = ReaderLibraryManager(
+        Injekt.get(),
+        Injekt.get(),
+        { libraryPreferences.defaultMangaCategory().get().toLong() },
+    )
+
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
 
@@ -849,6 +855,43 @@ class ReaderViewModel @JvmOverloads constructor(
         mutableState.update { it.copy(dialog = Dialog.Settings) }
     }
 
+    /** Add the current work without touching chapter, page, history, or viewer state. */
+    fun addToLibrary(categoryIds: List<Long>? = null, checkDuplicate: Boolean = true) {
+        val current = state.value
+        val mangaId = current.manga?.id ?: return
+        if (current.isAddingToLibrary || current.manga.favorite) return
+        mutableState.update { it.copy(isAddingToLibrary = true, dialog = null) }
+        viewModelScope.launchIO {
+            try {
+                when (val result = readerLibrary.add(mangaId, categoryIds, checkDuplicate)) {
+                    is ReaderLibraryManager.Result.Saved -> {
+                        mutableState.update {
+                            it.copy(
+                                manga = it.manga?.copy(
+                                    favorite = result.manga.favorite,
+                                    dateAdded = result.manga.dateAdded,
+                                ),
+                            )
+                        }
+                        eventChannel.send(Event.LibrarySaved)
+                    }
+                    ReaderLibraryManager.Result.Duplicate -> {
+                        mutableState.update { it.copy(dialog = Dialog.DuplicateLibraryManga) }
+                    }
+                    is ReaderLibraryManager.Result.ChooseCategory -> {
+                        mutableState.update { it.copy(dialog = Dialog.LibraryCategory(result.categories, result.selected)) }
+                    }
+                    is ReaderLibraryManager.Result.Failed -> {
+                        logcat(LogPriority.ERROR, result.error)
+                        eventChannel.send(Event.LibrarySaveFailed)
+                    }
+                }
+            } finally {
+                mutableState.update { it.copy(isAddingToLibrary = false) }
+            }
+        }
+    }
+
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
     }
@@ -1018,6 +1061,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val manga: Manga? = null,
         val viewerChapters: ViewerChapters? = null,
         val bookmarked: Boolean = false,
+        val isAddingToLibrary: Boolean = false,
         val isLoadingAdjacentChapter: Boolean = false,
         val currentPage: Int = -1,
 
@@ -1037,6 +1081,11 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     sealed interface Dialog {
+        data object DuplicateLibraryManga : Dialog
+        data class LibraryCategory(
+            val categories: List<tachiyomi.domain.category.model.Category>,
+            val selected: List<Long>,
+        ) : Dialog
         data object Loading : Dialog
         data object Settings : Dialog
         data object ReadingModeSelect : Dialog
@@ -1046,6 +1095,8 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     sealed interface Event {
+        data object LibrarySaved : Event
+        data object LibrarySaveFailed : Event
         data object ReloadViewerChapters : Event
         data object PageChanged : Event
         data class SetOrientation(val orientation: Int) : Event

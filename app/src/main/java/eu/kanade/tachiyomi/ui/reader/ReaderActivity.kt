@@ -49,6 +49,7 @@ import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.reader.DisplayRefreshHost
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.PageIndicatorText
+import eu.kanade.presentation.reader.ReaderLibraryCategoryDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
 import eu.kanade.presentation.reader.ReaderChapterListDialog
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
@@ -210,8 +211,8 @@ class ReaderActivity : BaseActivity() {
 
         viewModel.state
             .map { it.manga }
-            .distinctUntilChanged()
             .filterNotNull()
+            .distinctUntilChanged { old, new -> old.id == new.id && old.viewerFlags == new.viewerFlags }
             .onEach { updateViewer() }
             .launchIn(lifecycleScope)
 
@@ -225,6 +226,8 @@ class ReaderActivity : BaseActivity() {
         viewModel.eventFlow
             .onEach { event ->
                 when (event) {
+                    ReaderViewModel.Event.LibrarySaved -> toast("서재에 추가되었습니다")
+                    ReaderViewModel.Event.LibrarySaveFailed -> toast("서재에 추가하지 못했습니다. 다시 시도해 주세요")
                     ReaderViewModel.Event.ReloadViewerChapters -> {
                         viewModel.state.value.viewerChapters?.let(::setChapters)
                     }
@@ -407,6 +410,9 @@ class ReaderActivity : BaseActivity() {
                 chapterTitle = state.currentChapter?.chapter?.name,
                 navigateUp = onBackPressedDispatcher::onBackPressed,
                 onClickTopAppBar = ::openMangaScreen,
+                inLibrary = state.manga?.favorite == true,
+                libraryActionEnabled = state.manga != null && !state.isAddingToLibrary,
+                onAddToLibrary = { viewModel.addToLibrary() },
                 bookmarked = state.bookmarked,
                 onToggleBookmarked = viewModel::toggleChapterBookmark,
                 onOpenInWebView = ::openChapterInWebView.takeIf { isHttpSource },
@@ -448,6 +454,32 @@ class ReaderActivity : BaseActivity() {
 
             val onDismissRequest = viewModel::closeDialog
             when (state.dialog) {
+                is ReaderViewModel.Dialog.DuplicateLibraryManga -> {
+                    AlertDialog(
+                        onDismissRequest = onDismissRequest,
+                        title = { Text(stringResource(MR.strings.add_to_library)) },
+                        text = { Text(stringResource(MR.strings.confirm_add_duplicate_manga)) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                viewModel.addToLibrary(checkDuplicate = false)
+                            }) { Text(stringResource(MR.strings.action_add_anyway)) }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = onDismissRequest) {
+                                Text(stringResource(MR.strings.action_cancel))
+                            }
+                        },
+                    )
+                }
+                is ReaderViewModel.Dialog.LibraryCategory -> {
+                    val dialog = state.dialog as ReaderViewModel.Dialog.LibraryCategory
+                    ReaderLibraryCategoryDialog(
+                        categories = dialog.categories,
+                        selected = dialog.selected,
+                        onDismissRequest = onDismissRequest,
+                        onConfirm = { viewModel.addToLibrary(categoryIds = it, checkDuplicate = false) },
+                    )
+                }
                 is ReaderViewModel.Dialog.Loading -> {
                     AlertDialog(
                         onDismissRequest = {},

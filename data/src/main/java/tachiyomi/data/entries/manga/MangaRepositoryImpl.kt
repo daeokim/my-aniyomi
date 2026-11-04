@@ -97,6 +97,19 @@ class MangaRepositoryImpl(
         }
     }
 
+    override suspend fun addMangaToLibrary(mangaId: Long, categoryIds: List<Long>): Manga {
+        return handler.await(inTransaction = true) {
+            val current = mangasQueries.getMangaById(mangaId, MangaMapper::mapManga).executeAsOne()
+            if (current.favorite) return@await current
+            mangas_categoriesQueries.deleteMangaCategoryByMangaId(mangaId)
+            categoryIds.distinct().filter { it != 0L }.forEach { categoryId ->
+                mangas_categoriesQueries.insert(mangaId, categoryId)
+            }
+            mangasQueries.addToLibrary(java.time.Instant.now().toEpochMilli(), mangaId)
+            mangasQueries.getMangaById(mangaId, MangaMapper::mapManga).executeAsOne()
+        }
+    }
+
     override suspend fun insertManga(manga: Manga): Long? {
         return handler.awaitOneOrNullExecutable(inTransaction = true) {
             mangasQueries.insert(
